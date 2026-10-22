@@ -25,10 +25,20 @@
   /* In-game heads-up display */
   .hud { position: fixed; left: 0; right: 0; pointer-events: none; display: flex;
          justify-content: space-between; align-items: center; padding: 12px 16px; }
-  #hudTop { top: env(safe-area-inset-top, 0); }
+  #hudTop { top: env(safe-area-inset-top, 0); align-items: flex-start; }
   #hudBottom { bottom: env(safe-area-inset-bottom, 0); justify-content: space-around; color: #fff; }
-  #score { font-size: 44px; font-weight: 800; color: #fff; text-shadow: 0 3px 0 rgba(0,0,0,.25); }
+  #score { font-size: 44px; font-weight: 800; color: #fff; line-height: 1;
+           -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; text-shadow: 0 3px 0 rgba(0,0,0,.25); }
   #lives { font-size: 26px; letter-spacing: 2px; }
+  .hud-mid { display: flex; align-items: center; gap: 12px; }
+  #timer { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 3px 0 rgba(0,0,0,.25);
+           -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill;
+           font-variant-numeric: tabular-nums; }
+  #timer.ending { color: #ffe14d; }
+  #effects { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { background: rgba(255,255,255,.8); border-radius: 12px; padding: 2px 8px; font-size: 15px;
+          font-weight: 700; box-shadow: inset 0 0 0 2px var(--green); }
+  .chip.bad { background: rgba(255,228,222,.9); box-shadow: inset 0 0 0 2px #d9483b; }
   .stat { text-align: center; text-shadow: 0 2px 0 rgba(0,0,0,.25); }
   .stat b { display: block; font-size: 28px; font-variant-numeric: tabular-nums; }
   .stat span { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; opacity: .9; }
@@ -73,18 +83,43 @@
                   margin: 14px 0 6px; font-size: 15px; text-align: left; }
   label.setting input { width: 90px; font: inherit; font-size: 18px; padding: 8px; text-align: center;
                         border-radius: 10px; border: 2px solid #c4bea9; background: #fff; color: var(--ink); }
+
+  /* Endless / Timed */
+  .seg-row { display: flex; gap: 8px; margin: 14px 0 0; }
+  .seg { flex: 1; font: inherit; font-size: 16px; font-weight: 600; padding: 10px 6px; border-radius: 12px;
+         border: 2px solid #c4bea9; background: transparent; color: var(--ink); }
+  .seg.on { border-color: var(--accent); background: #ffe6d3; }
+  .duration { margin: 10px 0 0; text-align: left; }
+  .duration-head { display: flex; justify-content: space-between; font-size: 15px; }
+  .duration input { width: 100%; height: 28px; margin: 4px 0 0; accent-color: var(--accent); }
+  .ticks { display: flex; justify-content: space-between; padding: 0 4px; font-size: 12px; opacity: .7; }
+
+  /* On/off switch */
+  label.toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                 margin: 12px 0 0; font-size: 15px; text-align: left; }
+  label.toggle small { display: block; opacity: .7; }
+  label.toggle input { appearance: none; -webkit-appearance: none; flex: none; margin: 0; position: relative;
+                       width: 52px; height: 30px; border-radius: 15px; background: #c4bea9; transition: background .2s; }
+  label.toggle input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px;
+                              border-radius: 50%; background: #fff; transition: transform .2s; }
+  label.toggle input:checked { background: var(--green); }
+  label.toggle input:checked::after { transform: translateX(22px); }
+
   .hint { font-size: 13px; opacity: .7; margin: 6px 0 0; }
+  .hint.best { margin-top: 12px; }
   #status { min-height: 1.3em; margin: 10px 0 0; font-weight: 600; }
   #status:empty { display: none; }
-  .hint.best { margin-top: 0; }
   .hidden { display: none !important; }
 
-  /* Sideways phone: intro on the left, controls on the right, so nothing needs scrolling */
+  /* Sideways phone: settings on the left, connect/start on the right, so nothing needs scrolling */
   @media (orientation: landscape) and (max-height: 520px) {
-    .menu-card { max-width: 720px; display: grid; grid-template-columns: 1fr 1.5fr; gap: 24px;
-                 align-items: center; padding: 16px 20px; }
-    .menu-card h1 { font-size: 34px; }
-    .menu-card .sub { margin-bottom: 10px; }
+    .menu-card { max-width: 760px; display: grid; grid-template-columns: 1fr 1.25fr; gap: 24px;
+                 align-items: center; padding: 14px 20px; }
+    .menu-card h1 { font-size: 30px; }
+    .menu-card .sub { display: none; }
+    .menu-card .seg-row { margin-top: 8px; }
+    .menu-card .seg { padding: 7px 6px; }
+    .menu-card .hint.best { margin-top: 8px; }
     .source-buttons { display: flex; gap: 10px; }
     .source-buttons button.big { margin: 0; }
     .menu-controls button.big { font-size: 17px; padding: 12px; }
@@ -98,8 +133,14 @@
 <canvas id="game"></canvas>
 
 <div id="hudTop" class="hud hidden">
-  <div id="score">0</div>
-  <button id="pauseBtn" aria-label="Pause">❚❚</button>
+  <div>
+    <div id="score">0</div>
+    <div id="effects"></div>
+  </div>
+  <div class="hud-mid">
+    <span id="timer" class="hidden"></span>
+    <button id="pauseBtn" aria-label="Pause">❚❚</button>
+  </div>
   <div id="lives"></div>
 </div>
 <div id="hudBottom" class="hud hidden">
@@ -115,7 +156,21 @@
     <div class="menu-intro">
       <h1>Row Bird</h1>
       <p class="sub">Every stroke is a flap. Pull harder to fly higher.</p>
-      <p class="hint best">Best: <span id="bestMenu">0</span></p>
+
+      <div class="seg-row">
+        <button class="seg" data-mode="endless">Endless</button>
+        <button class="seg" data-mode="timed">Timed</button>
+      </div>
+      <div id="durationBox" class="duration">
+        <div class="duration-head"><span>Run length</span><b id="durationLabel"></b></div>
+        <input id="durationInput" type="range" min="0" max="3" step="1">
+        <div class="ticks"><span>5</span><span>10</span><span>15</span><span>20</span></div>
+      </div>
+      <label class="toggle">
+        <span>Power-ups<small>Random bonuses and hazards between pipes</small></span>
+        <input id="powerupsInput" type="checkbox">
+      </label>
+      <p class="hint best"><span id="bestLabel"></span>: <b id="bestMenu">0</b></p>
     </div>
     <div class="menu-controls">
       <div class="source-buttons">
@@ -145,11 +200,12 @@
   </div>
 </div>
 
-<!-- Game over -->
+<!-- Game over / time's up -->
 <div id="overMenu" class="overlay hidden">
   <div class="card">
-    <h2>Splash!</h2>
+    <h2 id="overTitle">Splash!</h2>
     <p class="sub">Score <b id="finalScore">0</b> · Best <b id="bestOver">0</b></p>
+    <p id="overStats" class="hint"></p>
     <button id="againBtn" class="big go">Row again</button>
     <button id="menuBtn" class="big secondary">Menu</button>
   </div>
@@ -167,6 +223,8 @@ const PIPE_W = 0.13;
 const SCROLL = 0.12;        // world scroll speed, screen-heights per second
 const SPACING = 0.95;       // distance between pipes (~8s apart)
 const START_LIVES = 3;
+const MAX_LIVES = 5;
+const DURATIONS = [5, 10, 15, 20];  // timed run lengths, minutes
 
 // Gentle gravity so one target-power stroke every ~2.5s keeps you level.
 const GRAVITY = 0.1;
@@ -178,12 +236,30 @@ const FLAP_V = 0.085;       // lift from a stroke at exactly target power
 const MIN_LIFT = 0.35, MAX_LIFT = 1.8;  // lift scales with watts, within these limits
 const DRIVE_TIMEOUT = 2;    // lift anyway if the power reading never arrives
 
+// Power-ups and power-downs, floating between pipes.
+const ITEM_R = 0.04;
+const ITEM_CHANCE = 0.35;   // chance of an item between any two pipes
+const GOOD_CHANCE = 0.6;
+const EFFECT_SECS = 12;     // how long Feather / Anchor last
+const HEAVY = 1.25, LIGHT = 0.75;  // gravity multipliers
+const GAP_PIPES = 4;        // how many pipes Wide gaps / Storm change
+const ITEMS = {
+  shield:  { icon: '🛡️', good: true,  label: 'Shield!' },
+  heart:   { icon: '❤️', good: true,  label: '+1 life' },
+  star:    { icon: '⭐', good: true,  label: '+3 points' },
+  feather: { icon: '🪶', good: true,  label: 'Feather: lighter!' },
+  wide:    { icon: '↕️', good: true,  label: 'Wide gaps!' },
+  anchor:  { icon: '⚓', good: false, label: 'Anchor: pull harder!' },
+  storm:   { icon: '⛈️', good: false, label: 'Storm: narrow gaps!' },
+};
+
 /* ------------------------------------------------------------------
  * Small helpers
  * ------------------------------------------------------------------ */
 const $ = id => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const nowSec = () => performance.now() / 1000;
+const pick = list => list[Math.floor(Math.random() * list.length)];
 
 // localStorage can be unavailable (private mode etc.); never let that break the game.
 const store = {
@@ -201,8 +277,24 @@ function formatPace(sec) {
   const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+function formatClock(sec) {
+  sec = Math.max(0, Math.ceil(sec));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
 // Concept2's own formula: watts = 2.80 / (sec per meter)^3
 const paceForWatts = w => w > 0 ? 500 / Math.cbrt(w / 2.8) : 0;
+
+/* ------------------------------------------------------------------
+ * Menu settings
+ * ------------------------------------------------------------------ */
+const settings = {
+  mode: store.get('runMode', 'endless'),  // 'endless' | 'timed'
+  durationIdx: clamp(store.get('durationIdx', 1), 0, DURATIONS.length - 1),
+  powerups: store.get('powerups', true),
+};
+const runMinutes = () => DURATIONS[settings.durationIdx];
+const bestKey = () => settings.mode === 'endless' ? 'best' : `best.timed${runMinutes()}`;
+const bestLabel = () => settings.mode === 'endless' ? 'Best (endless)' : `Best (${runMinutes()} min)`;
 
 /* ------------------------------------------------------------------
  * Rower data. Either a real PM5 over Bluetooth or the tap simulator
@@ -339,28 +431,42 @@ function updateSim() {
  * ------------------------------------------------------------------ */
 const game = {
   state: 'menu',  // 'menu' | 'countdown' | 'playing' | 'paused' | 'over'
+  mode: 'endless',
   bird: { y: 0.45, vy: 0, flap: 0 },
   pipes: [],
-  popups: [],     // floating watts numbers
+  items: [],
+  popups: [],     // floating text: stroke watts, item names
   score: 0,
   lives: START_LIVES,
   invuln: 0,      // seconds of post-hit invincibility left
+  timeLeft: 0,    // timed mode only
   countdown: 0,   // seconds left before play (re)starts
   driveTimer: 0,  // >0 while waiting for the current stroke's power
   lastLiftAt: -99,
-  best: store.get('best', 0),
+  shield: false,
+  heavy: 0,       // seconds of Anchor left
+  light: 0,       // seconds of Feather left
+  gapEffect: { delta: 0, pipesLeft: 0 },  // Wide gaps / Storm still to apply to new pipes
+  strokes: 0,
+  wattsTotal: 0,
+  crashes: 0,
   scrollX: 0,
   time: 0,
 };
 
 function startGame() {
-  game.bird = { y: 0.45, vy: 0, flap: 0 };
-  game.pipes = [];
-  game.popups = [];
-  game.score = 0;
-  game.lives = START_LIVES;
-  game.invuln = 0;
+  Object.assign(game, {
+    mode: settings.mode,
+    bird: { y: 0.45, vy: 0, flap: 0 },
+    pipes: [], items: [], popups: [],
+    score: 0, lives: START_LIVES, invuln: 0,
+    timeLeft: runMinutes() * 60,
+    shield: false, heavy: 0, light: 0, gapEffect: { delta: 0, pipesLeft: 0 },
+    strokes: 0, wattsTotal: 0, crashes: 0,
+  });
   addPipe(worldW + 0.4);
+  $('timer').classList.toggle('hidden', game.mode !== 'timed');
+  $('lives').classList.toggle('hidden', game.mode !== 'endless');
   showOnly(null);
   setHud(true);
   updateHud(Infinity);
@@ -387,11 +493,58 @@ function showCountdownNumber(n) {
 
 function addPipe(x) {
   const prev = game.pipes.at(-1);
-  const gapSize = Math.max(0.28, 0.42 - game.score * 0.005);
+  let gapSize = Math.max(0.28, 0.42 - game.score * 0.005);
+  if (game.gapEffect.pipesLeft > 0) {
+    gapSize = clamp(gapSize + game.gapEffect.delta, 0.22, 0.5);
+    game.gapEffect.pipesLeft--;
+  }
   // Keep each gap within reach of the last one.
   const center = prev ? clamp(prev.center + (Math.random() - 0.5) * 0.4, 0.27, 0.66)
                       : 0.45;
-  game.pipes.push({ x, center, gapSize, passed: false });
+  game.pipes.push({ x, center, gapSize, targetGap: gapSize, passed: false, crashed: false });
+  if (prev && settings.powerups && Math.random() < ITEM_CHANCE) addItem(prev, game.pipes.at(-1));
+}
+
+// Halfway between two pipes, at a height you can reach on the way from one gap to the next.
+function addItem(a, b) {
+  const y = clamp((a.center + b.center) / 2 + (Math.random() - 0.5) * 0.25, 0.15, 0.75);
+  game.items.push({ x: (a.x + b.x) / 2, y, type: pickItemType(), taken: false });
+}
+
+function pickItemType() {
+  if (Math.random() >= GOOD_CHANCE) return pick(['anchor', 'storm']);
+  const bonus = game.mode === 'endless' && game.lives < MAX_LIVES ? 'heart' : 'star';
+  return pick(['shield', bonus, 'feather', 'wide']);
+}
+
+function collect(item) {
+  item.taken = true;
+  const kind = ITEMS[item.type];
+  switch (item.type) {
+    case 'shield': game.shield = true; break;
+    case 'heart': game.lives = Math.min(MAX_LIVES, game.lives + 1); break;
+    case 'star': game.score += 3; break;
+    case 'feather': game.light = EFFECT_SECS; game.heavy = 0; break;
+    case 'anchor': game.heavy = EFFECT_SECS; game.light = 0; break;
+    case 'wide': changeGaps(+0.1); break;
+    case 'storm': changeGaps(-0.07); break;
+  }
+  addPopup(kind.label, item.x, item.y - 0.06, kind.good ? '#7dffa0' : '#ff8a80', 0.045);
+  if (kind.good) { beep(880, 0.1); setTimeout(() => beep(1320, 0.15), 90); }
+  else beep(180, 0.35);
+  updateHud(Infinity);
+}
+
+// Widen or narrow the next few pipes; ones already on screen visibly slide open/shut.
+function changeGaps(delta) {
+  let left = GAP_PIPES;
+  for (const p of game.pipes) {
+    if (left === 0) break;
+    if (p.x - PIPE_W / 2 < birdX + BIRD_R) continue;  // already at or behind the bird
+    p.targetGap = clamp(p.targetGap + delta, 0.22, 0.5);
+    left--;
+  }
+  game.gapEffect = { delta, pipesLeft: left };
 }
 
 // The drive has begun: a small hop right away so the bird feels connected to you.
@@ -411,10 +564,12 @@ function driveEnd(watts) {
   // Ignore a second report for the same stroke (e.g. after the timeout fallback).
   if (game.time - game.lastLiftAt < 0.8) return;
   game.lastLiftAt = game.time;
+  game.strokes++;
+  game.wattsTotal += watts;
 
   const ratio = watts / targetWatts;
   game.bird.vy = -FLAP_V * clamp(ratio, MIN_LIFT, MAX_LIFT);
-  game.popups.push({ text: watts + 'W', y: game.bird.y - 0.06, age: 0, color: powerColor(ratio) });
+  addPopup(watts + 'W', birdX, game.bird.y - 0.06, powerColor(ratio));
 }
 
 function powerColor(ratio) {
@@ -424,12 +579,16 @@ function powerColor(ratio) {
   return '#ffe14d';                    // huge
 }
 
+function addPopup(text, x, y, color, size = 0.05) {
+  game.popups.push({ text, x, y, color, size, age: 0 });
+}
+
 function update(dt) {
   game.time += dt;
   if (rower.source === 'sim') updateSim();
   game.bird.flap = Math.max(0, game.bird.flap - dt * 3);
   for (const p of game.popups) { p.age += dt; p.y -= dt * 0.08; }
-  game.popups = game.popups.filter(p => p.age < 1.2);
+  game.popups = game.popups.filter(p => p.age < 1.4);
 
   if (game.state === 'menu') {
     game.scrollX += SCROLL * 0.5 * dt;
@@ -447,6 +606,16 @@ function update(dt) {
   }
   if (game.state !== 'playing') return;
 
+  if (game.mode === 'timed') {
+    const before = Math.ceil(game.timeLeft);
+    game.timeLeft -= dt;
+    const after = Math.ceil(game.timeLeft);
+    if (after !== before && after <= 3 && after > 0) beep(520, 0.15);
+    if (game.timeLeft <= 0) { beep(880, 0.6); return endRun(); }
+  }
+  game.heavy = Math.max(0, game.heavy - dt);
+  game.light = Math.max(0, game.light - dt);
+
   game.scrollX += SCROLL * dt;
   const b = game.bird;
 
@@ -454,49 +623,75 @@ function update(dt) {
     game.driveTimer -= dt;
     if (game.driveTimer <= 0) driveEnd(rower.watts || targetWatts);
   }
-  b.vy = Math.min(b.vy + GRAVITY * dt, MAX_FALL);
+  const gravity = GRAVITY * (game.heavy > 0 ? HEAVY : game.light > 0 ? LIGHT : 1);
+  b.vy = Math.min(b.vy + gravity * dt, MAX_FALL);
   b.y += b.vy * dt;
   if (b.y < BIRD_R) { b.y = BIRD_R; b.vy = Math.max(0, b.vy); }
 
   for (const p of game.pipes) {
     p.x -= SCROLL * dt;
+    p.gapSize += (p.targetGap - p.gapSize) * Math.min(1, dt * 3);
     if (!p.passed && p.x + PIPE_W / 2 < birdX - BIRD_R) {
       p.passed = true;
-      game.score++;
+      if (!p.crashed) game.score++;
     }
   }
   game.pipes = game.pipes.filter(p => p.x > -PIPE_W);
   while (game.pipes.at(-1).x < worldW + SPACING) addPipe(game.pipes.at(-1).x + SPACING);
 
+  for (const it of game.items) {
+    it.x -= SCROLL * dt;
+    if (!it.taken && Math.hypot(it.x - birdX, it.y - b.y) < BIRD_R + ITEM_R) collect(it);
+  }
+  game.items = game.items.filter(it => !it.taken && it.x > -ITEM_R);
+
   if (game.invuln > 0) {
     game.invuln -= dt;
     if (b.y > GROUND - BIRD_R) { b.y = GROUND - BIRD_R; b.vy = Math.min(0, b.vy); }  // float
-  } else if (hitSomething()) {
-    loseLife();
+  } else {
+    const hit = findCollision();
+    if (hit) crash(hit);
   }
 }
 
-function hitSomething() {
+// Returns the pipe hit, 'water', or null.
+function findCollision() {
   const b = game.bird, r = BIRD_R * 0.8;  // slightly forgiving hitbox
-  if (b.y + r > GROUND) return true;
-  return game.pipes.some(p =>
+  if (b.y + r > GROUND) return 'water';
+  return game.pipes.find(p =>
     Math.abs(p.x - birdX) < PIPE_W / 2 + r &&
-    (b.y - r < p.center - p.gapSize / 2 || b.y + r > p.center + p.gapSize / 2));
+    (b.y - r < p.center - p.gapSize / 2 || b.y + r > p.center + p.gapSize / 2)) ?? null;
 }
 
-function loseLife() {
-  game.lives--;
+function crash(hit) {
+  if (game.shield) {
+    game.shield = false;
+    game.invuln = 1.5;
+    addPopup('Shield saved you!', birdX, game.bird.y - 0.06, '#7dffa0', 0.045);
+    beep(660, 0.2);
+    return;
+  }
+  if (hit !== 'water') hit.crashed = true;  // no point for a pipe you crashed into
+  game.crashes++;
   if (navigator.vibrate) navigator.vibrate(200);
-  if (game.lives <= 0) return gameOver();
+  beep(140, 0.3);
   game.invuln = 3;
   if (game.bird.y > GROUND - 0.1) { game.bird.y = GROUND - BIRD_R; game.bird.vy = 0; }
+  // Timed runs never end early; a crash just costs you that pipe.
+  if (game.mode === 'endless' && --game.lives <= 0) endRun();
 }
 
-function gameOver() {
+function endRun() {
   game.state = 'over';
-  if (game.score > game.best) { game.best = game.score; store.set('best', game.best); }
+  const key = bestKey();
+  const best = Math.max(game.score, store.get(key, 0));
+  store.set(key, best);
+  $('overTitle').textContent = game.mode === 'timed' ? "Time's up!" : 'Splash!';
   $('finalScore').textContent = game.score;
-  $('bestOver').textContent = game.best;
+  $('bestOver').textContent = best;
+  const avg = game.strokes ? Math.round(game.wattsTotal / game.strokes) : 0;
+  const crashes = game.crashes === 1 ? '1 crash' : `${game.crashes} crashes`;
+  $('overStats').textContent = `${game.strokes} strokes · avg ${avg} W · ${crashes}`;
   setHud(false);
   showOnly('overMenu');
 }
@@ -510,7 +705,7 @@ function pause(message = '') {
   showOnly('pauseMenu');
 }
 
-/* --- Sound: short beeps for the countdown -------------------------- */
+/* --- Sound: short beeps ------------------------------------------- */
 let audio = null;
 function beep(freq, duration) {
   try {
@@ -532,6 +727,7 @@ function beep(freq, duration) {
 const canvas = $('game');
 const ctx = canvas.getContext('2d');
 let worldW = 1;
+let viewH = 1;    // screen height in CSS pixels
 let birdX = 0.3;  // further left on narrow screens so you see pipes coming
 
 function resize() {
@@ -543,8 +739,29 @@ function resize() {
   canvas.style.height = h + 'px';
   ctx.setTransform(dpr * h, 0, 0, dpr * h, 0, 0);
   worldW = w / h;
+  viewH = h;
   birdX = clamp(worldW * 0.15, 0.08, 0.3);
   $('rotateHint').classList.toggle('hidden', worldW >= 1);
+}
+
+// Text is drawn in pixel space; tiny fractional font sizes render unreliably.
+function drawText(text, x, y, size, fill, { bold = true, outline = true } = {}) {
+  ctx.save();
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const px = Math.round(size * viewH);
+  ctx.font = `${bold ? 'bold ' : ''}${px}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (outline) {
+    ctx.lineWidth = px * 0.28;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(29,43,54,.85)';
+    ctx.strokeText(text, x * viewH, y * viewH);
+  }
+  ctx.fillStyle = fill;
+  ctx.fillText(text, x * viewH, y * viewH);
+  ctx.restore();
 }
 
 function draw() {
@@ -557,6 +774,7 @@ function draw() {
   drawClouds();
   drawHills();
   for (const p of game.pipes) drawPipe(p);
+  for (const it of game.items) drawItem(it);
   drawWater();
   drawBird();
   drawPopups();
@@ -608,6 +826,17 @@ function drawPipe(p) {
   }
 }
 
+// A bubble with an icon: green ring for good, red ring for bad.
+function drawItem(it) {
+  const kind = ITEMS[it.type];
+  const y = it.y + Math.sin(game.time * 3 + it.x * 10) * 0.008;
+  ctx.fillStyle = kind.good ? 'rgba(220,255,225,.85)' : 'rgba(255,225,220,.85)';
+  ctx.strokeStyle = kind.good ? '#3fa34d' : '#d9483b';
+  ctx.lineWidth = 0.007;
+  ctx.beginPath(); ctx.arc(it.x, y, ITEM_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  drawText(kind.icon, it.x, y + 0.003, ITEM_R * 1.15, '#000', { bold: false, outline: false });
+}
+
 function drawWater() {
   const water = ctx.createLinearGradient(0, GROUND, 0, 1);
   water.addColorStop(0, '#2f8fc4');
@@ -628,6 +857,14 @@ function drawBird() {
   const bob = game.state === 'countdown' ? Math.sin(game.time * 4) * 0.01 : 0;
   ctx.save();
   ctx.translate(birdX, b.y + bob);
+
+  if (game.shield) {
+    ctx.fillStyle = 'rgba(120,200,255,.25)';
+    ctx.strokeStyle = 'rgba(255,255,255,.9)';
+    ctx.lineWidth = 0.005;
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+
   ctx.rotate(clamp(b.vy * 3, -0.5, 0.7));
   ctx.lineWidth = r * 0.12;
   ctx.strokeStyle = '#4a3b00';
@@ -657,21 +894,14 @@ function drawBird() {
   ctx.restore();
 }
 
-// Each stroke's watts float up from the bird, colored by how hard it was.
+// Stroke watts and item names float up and fade out.
 function drawPopups() {
-  ctx.save();
-  ctx.font = 'bold 0.05px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.lineWidth = 0.014;
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = 'rgba(29,43,54,.85)';
   for (const p of game.popups) {
-    ctx.globalAlpha = clamp(1.6 - p.age * 1.4, 0, 1);
-    ctx.fillStyle = p.color;
-    ctx.strokeText(p.text, birdX, p.y);
-    ctx.fillText(p.text, birdX, p.y);
+    ctx.save();
+    ctx.globalAlpha = clamp(1.8 - p.age * 1.4, 0, 1);
+    drawText(p.text, p.x, p.y, p.size, p.color);
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 // Vertical bar on the right: last stroke's power; the white line is your target.
@@ -699,8 +929,6 @@ function setConnectButton(state, deviceName = '') {
   if (state === 'connected') {
     $('simBtn').textContent = 'Try without rower';
     $('simBtn').classList.remove('connected');
-  }
-  if (state === 'connected') {
     btn.textContent = '✓ Connected';
     btn.insertAdjacentHTML('beforeend', '<small></small>');
     btn.querySelector('small').textContent = deviceName;
@@ -713,10 +941,21 @@ function hideStart() { $('startBtn').classList.add('hidden'); }
 function showOnly(id) {
   for (const o of ['menu', 'pauseMenu', 'overMenu']) $(o).classList.toggle('hidden', o !== id);
   if (id) $('countdown').classList.add('hidden');
+  if (id === 'menu') refreshMenu();
 }
 function setHud(visible) {
   $('hudTop').classList.toggle('hidden', !visible);
   $('hudBottom').classList.toggle('hidden', !visible);
+}
+
+function refreshMenu() {
+  document.querySelectorAll('.seg').forEach(b => b.classList.toggle('on', b.dataset.mode === settings.mode));
+  $('durationBox').classList.toggle('hidden', settings.mode !== 'timed');
+  $('durationInput').value = settings.durationIdx;
+  $('durationLabel').textContent = `${runMinutes()} min`;
+  $('powerupsInput').checked = settings.powerups;
+  $('bestLabel').textContent = bestLabel();
+  $('bestMenu').textContent = store.get(bestKey(), 0);
 }
 
 let hudTimer = 0;
@@ -726,9 +965,22 @@ function updateHud(dt) {
   hudTimer = 0.2;
   $('score').textContent = game.score;
   $('lives').textContent = '❤️'.repeat(Math.max(0, game.lives));
+  $('timer').textContent = formatClock(game.timeLeft);
+  $('timer').classList.toggle('ending', game.timeLeft <= 30);
   $('spm').textContent = rower.spm || '–';
   $('pace').textContent = formatPace(rower.pace);
   $('watts').textContent = rower.watts || '–';
+
+  const chips = [];
+  if (game.shield) chips.push(['🛡️', '']);
+  if (game.light > 0) chips.push([`🪶 ${Math.ceil(game.light)}s`, '']);
+  if (game.heavy > 0) chips.push([`⚓ ${Math.ceil(game.heavy)}s`, 'bad']);
+  $('effects').replaceChildren(...chips.map(([text, cls]) => {
+    const el = document.createElement('span');
+    el.className = 'chip ' + cls;
+    el.textContent = text;
+    return el;
+  }));
 }
 
 // Stop the phone from going to sleep mid-workout.
@@ -758,6 +1010,21 @@ $('pauseBtn').addEventListener('click', ev => { ev.stopPropagation(); pause(); }
 $('resumeBtn').addEventListener('click', () => { showOnly(null); keepScreenOn(); startCountdown(); });
 $('quitBtn').addEventListener('click', () => { game.state = 'menu'; setHud(false); showOnly('menu'); });
 
+document.querySelectorAll('.seg').forEach(b => b.addEventListener('click', () => {
+  settings.mode = b.dataset.mode;
+  store.set('runMode', settings.mode);
+  refreshMenu();
+}));
+$('durationInput').addEventListener('input', () => {
+  settings.durationIdx = +$('durationInput').value;
+  store.set('durationIdx', settings.durationIdx);
+  refreshMenu();
+});
+$('powerupsInput').addEventListener('change', () => {
+  settings.powerups = $('powerupsInput').checked;
+  store.set('powerups', settings.powerups);
+});
+
 $('targetInput').value = targetWatts;
 $('targetInput').addEventListener('change', () => {
   const w = Math.round(+$('targetInput').value);
@@ -779,9 +1046,9 @@ if (!navigator.bluetooth) {
   $('connectBtn').disabled = true;
   setStatus('Bluetooth needs Chrome on Android, opened from an https:// address.');
 }
-$('bestMenu').textContent = game.best;
 addEventListener('resize', resize);
 resize();
+refreshMenu();
 
 let lastFrame = performance.now();
 function frame(now) {
@@ -790,7 +1057,6 @@ function frame(now) {
   update(dt);
   draw();
   if (game.state === 'playing' || game.state === 'countdown') updateHud(dt);
-  if (game.state === 'menu') $('bestMenu').textContent = game.best;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

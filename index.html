@@ -699,7 +699,7 @@ function findCollision() {
 function crash(hit) {
   if (game.shield) {
     game.shield = false;
-    game.invuln = 1.5;
+    game.invuln = 3;  // long enough to clear the gate (~1.55s to cross one)
     showBanner('🛡️ Shield saved you!', '', true);
     beep(660, 0.2);
     return;
@@ -1106,11 +1106,12 @@ document.addEventListener('visibilitychange', () => {
 
 $('connectBtn').addEventListener('click', connectPM5);
 $('simBtn').addEventListener('click', () => {
-  rower.source = 'sim';
-  $('simBtn').textContent = '✓ Simulator on';
-  $('simBtn').classList.add('connected');
-  setStatus('Simulator: press and hold the screen for each stroke. Hold ~½ second for target power, longer for more.');
-  showStart();
+  const on = rower.source !== 'sim';
+  rower.source = on ? 'sim' : null;
+  $('simBtn').textContent = on ? '✓ Simulator on' : 'Try without rower';
+  $('simBtn').classList.toggle('connected', on);
+  setStatus(on ? 'Simulator: press and hold the screen for each stroke. Hold ~½ second for target power, longer for more.' : '');
+  if (on) showStart(); else hideStart();
 });
 $('startBtn').addEventListener('click', startGame);
 $('againBtn').addEventListener('click', startGame);

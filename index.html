@@ -186,7 +186,7 @@
         <div class="ticks"><span>5</span><span>10</span><span>15</span><span>20</span></div>
       </div>
       <label class="toggle">
-        <span>Power-ups<small>Random bonuses and hazards between pipes</small></span>
+        <span>Power-ups<small>Random bonuses and hazards along the river</small></span>
         <input id="powerupsInput" type="checkbox">
       </label>
       <p class="hint best"><span id="bestLabel"></span>: <b id="bestMenu">0</b></p>
@@ -238,9 +238,9 @@
  * ------------------------------------------------------------------ */
 const GROUND = 0.88;        // water line; touching it costs a life
 const BIRD_R = 0.035;
-const PIPE_W = 0.13;
+const GATE_W = 0.13;
 const SCROLL = 0.12;        // world scroll speed, screen-heights per second
-const SPACING = 0.95;       // distance between pipes (~8s apart)
+const SPACING = 0.95;       // distance between gates (~8s apart)
 const START_LIVES = 3;
 const MAX_LIVES = 5;
 const DURATIONS = [5, 10, 15, 20];  // timed run lengths, minutes
@@ -255,21 +255,21 @@ const FLAP_V = 0.085;       // lift from a stroke at exactly target power
 const MIN_LIFT = 0.35, MAX_LIFT = 1.8;  // lift scales with watts, within these limits
 const DRIVE_TIMEOUT = 2;    // lift anyway if the power reading never arrives
 
-// Power-ups and power-downs, floating between pipes.
+// Power-ups and power-downs, floating between gates.
 const ITEM_R = 0.04;
-const ITEM_CHANCE = 0.18;   // chance of an item between any two pipes
+const ITEM_CHANCE = 0.18;   // chance of an item between any two gates
 const GOOD_CHANCE = 0.6;
 const EFFECT_SECS = 12;     // how long Feather / Anchor last
 const HEAVY = 1.25, LIGHT = 0.75;  // gravity multipliers
-const GAP_PIPES = 4;        // how many pipes Wide gaps / Storm change
+const GAP_GATES = 4;        // how many gates Wide gaps / Storm change
 const ITEMS = {
   shield:  { icon: '🛡️', good: true,  label: 'Shield!',    desc: 'Blocks your next crash' },
   heart:   { icon: '❤️', good: true,  label: 'Extra life!', desc: '+1 heart' },
   star:    { icon: '⭐', good: true,  label: '+3 points!', desc: 'Bonus points' },
   feather: { icon: '🪶', good: true,  label: 'Feather!',   desc: `Lighter for ${EFFECT_SECS} seconds` },
-  wide:    { icon: '↕️', good: true,  label: 'Wide gaps!', desc: `Next ${GAP_PIPES} pipes open up` },
+  wide:    { icon: '↕️', good: true,  label: 'Wide gaps!', desc: `Next ${GAP_GATES} gates open up` },
   anchor:  { icon: '⚓', good: false, label: 'Anchor!',    desc: `Heavier for ${EFFECT_SECS} seconds: pull harder!` },
-  storm:   { icon: '⛈️', good: false, label: 'Storm!',     desc: `Next ${GAP_PIPES} pipes get narrower` },
+  storm:   { icon: '⛈️', good: false, label: 'Storm!',     desc: `Next ${GAP_GATES} gates get narrower` },
 };
 
 /* ------------------------------------------------------------------
@@ -452,7 +452,7 @@ const game = {
   state: 'menu',  // 'menu' | 'countdown' | 'playing' | 'paused' | 'over'
   mode: 'endless',
   bird: { y: 0.45, vy: 0, flap: 0 },
-  pipes: [],
+  gates: [],
   items: [],
   popups: [],     // floating text: stroke watts, item names
   score: 0,
@@ -465,7 +465,7 @@ const game = {
   shield: false,
   heavy: 0,       // seconds of Anchor left
   light: 0,       // seconds of Feather left
-  gapEffect: { delta: 0, pipesLeft: 0 },  // Wide gaps / Storm still to apply to new pipes
+  gapEffect: { delta: 0, gatesLeft: 0 },  // Wide gaps / Storm still to apply to new gates
   strokes: 0,
   wattsTotal: 0,
   crashes: 0,
@@ -477,13 +477,13 @@ function startGame() {
   Object.assign(game, {
     mode: settings.mode,
     bird: { y: 0.45, vy: 0, flap: 0 },
-    pipes: [], items: [], popups: [],
+    gates: [], items: [], popups: [],
     score: 0, lives: START_LIVES, invuln: 0,
     timeLeft: runMinutes() * 60,
-    shield: false, heavy: 0, light: 0, gapEffect: { delta: 0, pipesLeft: 0 },
+    shield: false, heavy: 0, light: 0, gapEffect: { delta: 0, gatesLeft: 0 },
     strokes: 0, wattsTotal: 0, crashes: 0,
   });
-  addPipe(worldW + 0.4);
+  addGate(worldW + 0.4);
   $('timer').classList.toggle('hidden', game.mode !== 'timed');
   $('lives').classList.toggle('hidden', game.mode !== 'endless');
   showOnly(null);
@@ -510,21 +510,21 @@ function showCountdownNumber(n) {
   beep(n > 0 ? 520 : 880, n > 0 ? 0.15 : 0.5);
 }
 
-function addPipe(x) {
-  const prev = game.pipes.at(-1);
+function addGate(x) {
+  const prev = game.gates.at(-1);
   let gapSize = Math.max(0.28, 0.42 - game.score * 0.005);
-  if (game.gapEffect.pipesLeft > 0) {
+  if (game.gapEffect.gatesLeft > 0) {
     gapSize = clamp(gapSize + game.gapEffect.delta, 0.22, 0.5);
-    game.gapEffect.pipesLeft--;
+    game.gapEffect.gatesLeft--;
   }
   // Keep each gap within reach of the last one.
   const center = prev ? clamp(prev.center + (Math.random() - 0.5) * 0.4, 0.27, 0.66)
                       : 0.45;
-  game.pipes.push({ x, center, gapSize, targetGap: gapSize, passed: false, crashed: false });
-  if (prev && settings.powerups && Math.random() < ITEM_CHANCE) addItem(prev, game.pipes.at(-1));
+  game.gates.push({ x, center, gapSize, targetGap: gapSize, passed: false, crashed: false, seed: Math.random() });
+  if (prev && settings.powerups && Math.random() < ITEM_CHANCE) addItem(prev, game.gates.at(-1));
 }
 
-// Halfway between two pipes, at a height you can reach on the way from one gap to the next.
+// Halfway between two gates, at a height you can reach on the way from one gap to the next.
 function addItem(a, b) {
   const y = clamp((a.center + b.center) / 2 + (Math.random() - 0.5) * 0.25, 0.15, 0.75);
   game.items.push({ x: (a.x + b.x) / 2, y, type: pickItemType(), taken: false });
@@ -568,16 +568,16 @@ function showBanner(title, desc, good) {
   bannerTimer = setTimeout(() => el.classList.add('hidden'), 2800);
 }
 
-// Widen or narrow the next few pipes; ones already on screen visibly slide open/shut.
+// Widen or narrow the next few gates; ones already on screen visibly slide open/shut.
 function changeGaps(delta) {
-  let left = GAP_PIPES;
-  for (const p of game.pipes) {
+  let left = GAP_GATES;
+  for (const p of game.gates) {
     if (left === 0) break;
-    if (p.x - PIPE_W / 2 < birdX + BIRD_R) continue;  // already at or behind the bird
+    if (p.x - GATE_W / 2 < birdX + BIRD_R) continue;  // already at or behind the bird
     p.targetGap = clamp(p.targetGap + delta, 0.22, 0.5);
     left--;
   }
-  game.gapEffect = { delta, pipesLeft: left };
+  game.gapEffect = { delta, gatesLeft: left };
 }
 
 // The drive has begun: a small hop right away so the bird feels connected to you.
@@ -661,16 +661,16 @@ function update(dt) {
   b.y += b.vy * dt;
   if (b.y < BIRD_R) { b.y = BIRD_R; b.vy = Math.max(0, b.vy); }
 
-  for (const p of game.pipes) {
+  for (const p of game.gates) {
     p.x -= SCROLL * dt;
     p.gapSize += (p.targetGap - p.gapSize) * Math.min(1, dt * 3);
-    if (!p.passed && p.x + PIPE_W / 2 < birdX - BIRD_R) {
+    if (!p.passed && p.x + GATE_W / 2 < birdX - BIRD_R) {
       p.passed = true;
       if (!p.crashed) game.score++;
     }
   }
-  game.pipes = game.pipes.filter(p => p.x > -PIPE_W);
-  while (game.pipes.at(-1).x < worldW + SPACING) addPipe(game.pipes.at(-1).x + SPACING);
+  game.gates = game.gates.filter(p => p.x > -GATE_W);
+  while (game.gates.at(-1).x < worldW + SPACING) addGate(game.gates.at(-1).x + SPACING);
 
   for (const it of game.items) {
     it.x -= SCROLL * dt;
@@ -687,12 +687,12 @@ function update(dt) {
   }
 }
 
-// Returns the pipe hit, 'water', or null.
+// Returns the gate hit, 'water', or null.
 function findCollision() {
   const b = game.bird, r = BIRD_R * 0.8;  // slightly forgiving hitbox
   if (b.y + r > GROUND) return 'water';
-  return game.pipes.find(p =>
-    Math.abs(p.x - birdX) < PIPE_W / 2 + r &&
+  return game.gates.find(p =>
+    Math.abs(p.x - birdX) < GATE_W / 2 + r &&
     (b.y - r < p.center - p.gapSize / 2 || b.y + r > p.center + p.gapSize / 2)) ?? null;
 }
 
@@ -704,13 +704,13 @@ function crash(hit) {
     beep(660, 0.2);
     return;
   }
-  if (hit !== 'water') hit.crashed = true;  // no point for a pipe you crashed into
+  if (hit !== 'water') hit.crashed = true;  // no point for a gate you crashed into
   game.crashes++;
   if (navigator.vibrate) navigator.vibrate(200);
   beep(140, 0.3);
   game.invuln = 3;
   if (game.bird.y > GROUND - 0.1) { game.bird.y = GROUND - BIRD_R; game.bird.vy = 0; }
-  // Timed runs never end early; a crash just costs you that pipe.
+  // Timed runs never end early; a crash just costs you that gate.
   if (game.mode === 'endless' && --game.lives <= 0) endRun();
 }
 
@@ -761,7 +761,7 @@ const canvas = $('game');
 const ctx = canvas.getContext('2d');
 let worldW = 1;
 let viewH = 1;    // screen height in CSS pixels
-let birdX = 0.3;  // further left on narrow screens so you see pipes coming
+let birdX = 0.3;  // further left on narrow screens so you see gates coming
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -806,8 +806,9 @@ function draw() {
 
   drawClouds();
   drawHills();
-  for (const p of game.pipes) drawPipe(p);
+  for (const p of game.gates) drawGate(p);
   for (const it of game.items) drawItem(it);
+  drawReeds();
   drawWater();
   drawBird();
   drawPopups();
@@ -838,24 +839,99 @@ function drawHills() {
   ctx.fill();
 }
 
-function drawPipe(p) {
-  const left = p.x - PIPE_W / 2;
-  const top = p.center - p.gapSize / 2;
-  const bottom = p.center + p.gapSize / 2;
-  const lip = 0.045, lipOver = 0.015;
-  ctx.lineWidth = 0.004;
-  ctx.strokeStyle = '#24622c';
-  for (const [y, h] of [[0, top], [bottom, GROUND - bottom]]) {
-    ctx.fillStyle = '#5cbf5c';
-    ctx.fillRect(left, y, PIPE_W, h);
-    ctx.strokeRect(left, y, PIPE_W, h);
-    ctx.fillStyle = 'rgba(255,255,255,.25)';
-    ctx.fillRect(left + PIPE_W * 0.15, y, PIPE_W * 0.12, h);
+// Each gate: willow branches hanging from above, a stone bridge pillar rising from the river.
+function drawGate(p) {
+  drawWillow(p.x, p.center - p.gapSize / 2, p.seed);
+  drawPillar(p.x, p.center + p.gapSize / 2);
+}
+
+function drawPillar(x, top) {
+  const left = x - GATE_W / 2;
+  const h = GROUND - top + 0.03;  // runs under the water surface, which is drawn on top
+  ctx.save();
+  ctx.fillStyle = '#b3a593';
+  ctx.fillRect(left, top, GATE_W, h);
+  ctx.beginPath(); ctx.rect(left, top, GATE_W, h); ctx.clip();
+  // Brick courses, every other row offset by half a brick
+  ctx.strokeStyle = 'rgba(80,66,52,.45)';
+  ctx.lineWidth = 0.003;
+  const row = 0.035, brick = GATE_W / 2;
+  for (let y = top + 0.03, i = 0; y < top + h; y += row, i++) {
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + GATE_W, y); ctx.stroke();
+    for (let bx = left + (i % 2 ? brick / 2 : brick); bx < left + GATE_W; bx += brick) {
+      ctx.beginPath(); ctx.moveTo(bx, y); ctx.lineTo(bx, y + row); ctx.stroke();
+    }
   }
-  ctx.fillStyle = '#4caf50';
-  for (const y of [top - lip, bottom]) {
-    ctx.fillRect(left - lipOver, y, PIPE_W + lipOver * 2, lip);
-    ctx.strokeRect(left - lipOver, y, PIPE_W + lipOver * 2, lip);
+  // Shade the right side, moss at the waterline
+  ctx.fillStyle = 'rgba(0,0,0,.13)';
+  ctx.fillRect(left + GATE_W * 0.72, top, GATE_W * 0.28, h);
+  ctx.fillStyle = 'rgba(70,120,50,.6)';
+  ctx.fillRect(left, GROUND - 0.04, GATE_W, 0.06);
+  ctx.restore();
+  ctx.strokeStyle = '#5b4e40';
+  ctx.lineWidth = 0.004;
+  ctx.strokeRect(left, top, GATE_W, h);
+  // Capstone
+  const over = 0.012;
+  ctx.fillStyle = '#9a8c7a';
+  ctx.fillRect(left - over, top, GATE_W + over * 2, 0.03);
+  ctx.strokeRect(left - over, top, GATE_W + over * 2, 0.03);
+}
+
+// A curtain of willow leaves; the longest strands end exactly at the gap edge (the hitbox).
+function drawWillow(x, bottom, seed) {
+  const left = x - GATE_W / 2;
+  const body = bottom - 0.05;
+  ctx.fillStyle = '#3f7a35';
+  ctx.fillRect(left, 0, GATE_W, Math.max(0, body));
+  ctx.beginPath();  // lumpy lower edge of the canopy
+  for (let i = 0; i < 4; i++) {
+    const cx = left + GATE_W * (i + 0.5) / 4;
+    ctx.moveTo(cx + 0.028, body);
+    ctx.arc(cx, body, 0.028, 0, Math.PI * 2);
+  }
+  ctx.fill();
+  // Lighter leaf texture on the canopy
+  ctx.strokeStyle = 'rgba(140,200,100,.35)';
+  ctx.lineWidth = 0.006;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 5; i++) {
+    const sx = left + 0.015 + (GATE_W - 0.03) * i / 4;
+    ctx.beginPath(); ctx.moveTo(sx, Math.max(0, body - 0.25)); ctx.lineTo(sx, body); ctx.stroke();
+  }
+  // Drooping strands, gently swaying
+  for (let i = 0; i < 7; i++) {
+    const sx = left + 0.008 + (GATE_W - 0.016) * i / 6;
+    const len = i % 3 === 1 ? 0.05 : 0.04 + 0.01 * ((seed * (i + 3) * 7.13) % 1);
+    const sway = Math.sin(game.time * 1.5 + seed * 10 + i) * 0.004;
+    ctx.strokeStyle = i % 2 ? '#5d9e45' : '#78b856';
+    ctx.lineWidth = 0.011;
+    ctx.beginPath();
+    ctx.moveTo(sx, body - 0.01);
+    ctx.quadraticCurveTo(sx + sway, body + len / 2, sx + sway * 2, body + len - 0.0055);
+    ctx.stroke();
+  }
+}
+
+// Reeds and cattails along the near bank.
+function drawReeds() {
+  const spacing = 0.37;
+  const offset = game.scrollX % spacing;
+  ctx.lineCap = 'round';
+  for (let x0 = -offset; x0 < worldW + spacing; x0 += spacing) {
+    const n = Math.floor((x0 + game.scrollX) / spacing + 0.5);  // stable per clump
+    for (let j = 0; j < 3; j++) {
+      const x = x0 + j * 0.018 + (n % 3) * 0.05;
+      const tall = 0.045 + ((n * 7 + j * 3) % 5) * 0.008;
+      ctx.strokeStyle = '#4f7d33';
+      ctx.lineWidth = 0.005;
+      ctx.beginPath(); ctx.moveTo(x, GROUND + 0.01); ctx.lineTo(x + 0.004 * (j - 1), GROUND - tall); ctx.stroke();
+      if (j === 1) {
+        ctx.strokeStyle = '#7a4f2a';
+        ctx.lineWidth = 0.011;
+        ctx.beginPath(); ctx.moveTo(x, GROUND - tall + 0.01); ctx.lineTo(x, GROUND - tall + 0.03); ctx.stroke();
+      }
+    }
   }
 }
 

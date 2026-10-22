@@ -1,6 +1,6 @@
 # Row Bird
 
-A slow-paced, Flappy Bird–style game controlled by a **Concept2 rower (PM5 monitor)** over Bluetooth. The player rows; each stroke flaps the bird, and harder strokes fly higher. It is played on an **Android phone in Chrome**, usually held sideways on the rower.
+A slow-paced, river-themed side-scrolling game controlled by a **Concept2 rower (PM5 monitor)** over Bluetooth. The player rows; each stroke flaps the bird, and harder strokes fly higher. The bird flies through **gates**: the gap between willow branches hanging from above and a stone bridge pillar rising from the river. It is played on an **Android phone in Chrome**, usually held sideways on the rower.
 
 - **Live:** https://bdeboer-x.github.io/row-bird/
 - **Repo:** https://github.com/bdeboer-x/row-bird (public, GitHub account `bdeboer-x`, `gh` CLI is logged in on this machine)
@@ -15,7 +15,7 @@ A slow-paced, Flappy Bird–style game controlled by a **Concept2 rower (PM5 mon
 
 The script runs top to bottom in these sections:
 
-1. **Tunables:** every gameplay number lives in constants at the top (physics, pipe spacing, item rates, effect durations, the `ITEMS` table). Change feel there first.
+1. **Tunables:** every gameplay number lives in constants at the top (physics, gate spacing, item rates, effect durations, the `ITEMS` table). Change feel there first.
 2. **Settings:** menu choices (`settings.mode` endless/timed, `durationIdx`, `powerups`), persisted in localStorage.
 3. **Rower data:** the `rower` object (spm, pace, last-stroke watts) plus two input sources. Both call the same two hooks, `driveStart()` and `driveEnd(watts)`:
    - **PM5 over Web Bluetooth** (`connectPM5`)
@@ -56,14 +56,22 @@ These follow Concept2's "PM5 Bluetooth Smart Interface Definition". Service UUID
 - **Glide mode was removed.** It mapped pace to climb rate (and later to height). It felt laggy, because flywheel speed changes over several strokes. Don't reintroduce it without solving that lag.
 - **Modes:**
   - **Endless:** 3 lives, max 5.
-  - **Timed:** 5/10/15/20 minutes. **You can't die**, because the owner uses it as a workout. A crash forfeits that pipe's point (`pipe.crashed`), followed by 3s of invulnerability. The end screen shows strokes, average watts and crashes.
+  - **Timed:** 5/10/15/20 minutes. **You can't die**, because the owner uses it as a workout. A crash forfeits that gate's point (`gate.crashed`), followed by 3s of invulnerability. The end screen shows strokes, average watts and crashes.
   - Best scores are stored per mode and length.
-- **Power-ups** (menu toggle, on by default) float halfway between pipes, `ITEM_CHANCE = 0.18`. This was halved from 0.35 after the owner found 0.35 too many. 60% good / 40% bad.
-  - Good: shield, heart (Endless) / +3 star (Timed, or at max lives), feather (gravity ×0.75 for 12s), wide gaps (next 4 pipes +0.1).
-  - Bad: anchor (gravity ×1.25 for 12s, needing ~30% more watts), storm (next 4 pipes −0.07, min 0.22).
+- **Power-ups** (menu toggle, on by default) float halfway between gates, `ITEM_CHANCE = 0.18`. This was halved from 0.35 after the owner found 0.35 too many. 60% good / 40% bad.
+  - Good: shield, heart (Endless) / +3 star (Timed, or at max lives), feather (gravity ×0.75 for 12s), wide gaps (next 4 gates +0.1).
+  - Bad: anchor (gravity ×1.25 for 12s, needing ~30% more watts), storm (next 4 gates −0.07, min 0.22).
   - Pickups are announced with a **large banner across the top** (`showBanner`). The owner asked for this because small text near the bird went unnoticed. Active timed effects also show as chips under the score.
 - **Phone held sideways is the intended view.** Upright, you only see about 1.5s ahead. The menu switches to a two-column layout for short landscape screens (`@media (orientation: landscape) and (max-height: 520px)`) so it fits without scrolling.
 - The screen is kept awake with the Wake Lock API, and the game auto-pauses when the app goes to the background or the PM5 disconnects.
+
+## Original look, no borrowed IP
+
+The owner asked about legal risk from the game's resemblance to Flappy Bird. Game mechanics can't be copyrighted; names, art, sounds and code can. To stay clearly distinct:
+- Don't use the name "Flappy Bird" anywhere: not in the page, README, repo description or other public text. (It still appears in a couple of early git commit messages. That was left alone, since rewriting public history isn't worth it.)
+- Keep all art drawn in code and original. In particular, **no green Mario-style pipes**. Obstacles are river-themed: `drawWillow` (a leafy curtain whose longest strands end exactly at the hitbox edge) and `drawPillar` (a brick bridge pier with a capstone, moss at the waterline, and its base hidden under the water). `drawReeds` adds cattails along the bank.
+- In code and UI the obstacles are called **gates** (`game.gates`, `GATE_W`, `addGate`, `drawGate`), not pipes.
+- Concept2/PM5 is referenced only to say what the game connects to. Don't use their logo or suggest they endorse it.
 
 ## localStorage keys (prefix `rowbird.`)
 
@@ -79,7 +87,7 @@ firefox --headless --no-remote --profile <scratch>/ffprof --window-size=800,360 
 
 - Make a test copy that injects a `<script>` before `</body>`. It can drive the game synchronously (`startGame(); game.state='playing'; loop { driveStart/driveEnd; update(1/60) }`), then freeze it with `update=()=>{}`. Don't freeze it with `lastFrame=Infinity`: that produces a negative dt and NaN physics.
 - Stub `beep=()=>{}` and override `performance.now` when simulating time.
-- A "steering bot" (power ratio = `1 + (bird.y - nextGap.center) * 4`) is the standard check. It should survive several minutes without crashing.
+- A "steering bot" (power ratio = `1 + (bird.y - nextGate.center) * 4`) is the standard check. It should survive several minutes without crashing.
 - A level-flight check: steady target power at 24 spm should keep `bird.y` near 0.45.
 - Useful sizes: 800×360 (phone sideways with Chrome's address bar) and 412×860 (upright).
 - CSS transitions and animations are captured at t=0. Disable them in the test copy before judging a screenshot. A "switch looks off" false alarm came from this.

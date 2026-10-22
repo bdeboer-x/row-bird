@@ -45,6 +45,24 @@
   #pauseBtn { pointer-events: auto; font-size: 20px; width: 44px; height: 44px; border-radius: 50%;
               border: 0; background: rgba(255,255,255,.7); color: var(--ink); }
 
+  /* Power-up announcement */
+  #banner { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 68px); z-index: 2;
+            transform: translateX(-50%); pointer-events: none; text-align: center; white-space: nowrap;
+            max-width: calc(100vw - 32px); padding: 8px 26px; border-radius: 18px;
+            background: rgba(232,250,235,.95); color: #1f6b2b; box-shadow: inset 0 0 0 3px var(--green), 0 6px 18px rgba(0,0,0,.2); }
+  #banner.bad { background: rgba(255,236,232,.95); color: #a3291f; box-shadow: inset 0 0 0 3px #d9483b, 0 6px 18px rgba(0,0,0,.2); }
+  #bannerTitle { font-size: clamp(26px, 9vh, 44px); font-weight: 900; line-height: 1.15; }
+  #bannerDesc { font-size: clamp(15px, 4.5vh, 20px); font-weight: 600; white-space: normal; }
+  #bannerDesc:empty { display: none; }
+  #banner.show { animation: banner 2.8s ease-out forwards; }
+  @keyframes banner {
+    0%   { transform: translateX(-50%) scale(.5); opacity: 0; }
+    8%   { transform: translateX(-50%) scale(1.08); opacity: 1; }
+    14%  { transform: translateX(-50%) scale(1); }
+    85%  { opacity: 1; }
+    100% { transform: translateX(-50%) scale(1); opacity: 0; }
+  }
+
   /* 3, 2, 1, GOOO! */
   #countdown { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
                pointer-events: none; font-size: min(40vh, 40vw); font-weight: 900; color: #fff;
@@ -149,6 +167,7 @@
   <div class="stat"><b id="watts">–</b><span>watts</span></div>
 </div>
 <div id="countdown" class="hidden"></div>
+<div id="banner" class="hidden"><div id="bannerTitle"></div><div id="bannerDesc"></div></div>
 
 <!-- Main menu -->
 <div id="menu" class="overlay">
@@ -238,19 +257,19 @@ const DRIVE_TIMEOUT = 2;    // lift anyway if the power reading never arrives
 
 // Power-ups and power-downs, floating between pipes.
 const ITEM_R = 0.04;
-const ITEM_CHANCE = 0.35;   // chance of an item between any two pipes
+const ITEM_CHANCE = 0.18;   // chance of an item between any two pipes
 const GOOD_CHANCE = 0.6;
 const EFFECT_SECS = 12;     // how long Feather / Anchor last
 const HEAVY = 1.25, LIGHT = 0.75;  // gravity multipliers
 const GAP_PIPES = 4;        // how many pipes Wide gaps / Storm change
 const ITEMS = {
-  shield:  { icon: '🛡️', good: true,  label: 'Shield!' },
-  heart:   { icon: '❤️', good: true,  label: '+1 life' },
-  star:    { icon: '⭐', good: true,  label: '+3 points' },
-  feather: { icon: '🪶', good: true,  label: 'Feather: lighter!' },
-  wide:    { icon: '↕️', good: true,  label: 'Wide gaps!' },
-  anchor:  { icon: '⚓', good: false, label: 'Anchor: pull harder!' },
-  storm:   { icon: '⛈️', good: false, label: 'Storm: narrow gaps!' },
+  shield:  { icon: '🛡️', good: true,  label: 'Shield!',    desc: 'Blocks your next crash' },
+  heart:   { icon: '❤️', good: true,  label: 'Extra life!', desc: '+1 heart' },
+  star:    { icon: '⭐', good: true,  label: '+3 points!', desc: 'Bonus points' },
+  feather: { icon: '🪶', good: true,  label: 'Feather!',   desc: `Lighter for ${EFFECT_SECS} seconds` },
+  wide:    { icon: '↕️', good: true,  label: 'Wide gaps!', desc: `Next ${GAP_PIPES} pipes open up` },
+  anchor:  { icon: '⚓', good: false, label: 'Anchor!',    desc: `Heavier for ${EFFECT_SECS} seconds: pull harder!` },
+  storm:   { icon: '⛈️', good: false, label: 'Storm!',     desc: `Next ${GAP_PIPES} pipes get narrower` },
 };
 
 /* ------------------------------------------------------------------
@@ -529,10 +548,24 @@ function collect(item) {
     case 'wide': changeGaps(+0.1); break;
     case 'storm': changeGaps(-0.07); break;
   }
-  addPopup(kind.label, item.x, item.y - 0.06, kind.good ? '#7dffa0' : '#ff8a80', 0.045);
+  showBanner(`${kind.icon} ${kind.label}`, kind.desc, kind.good);
   if (kind.good) { beep(880, 0.1); setTimeout(() => beep(1320, 0.15), 90); }
   else beep(180, 0.35);
   updateHud(Infinity);
+}
+
+// Big announcement across the top of the screen when you collect something.
+let bannerTimer = null;
+function showBanner(title, desc, good) {
+  const el = $('banner');
+  $('bannerTitle').textContent = title;
+  $('bannerDesc').textContent = desc;
+  el.classList.toggle('bad', !good);
+  el.classList.remove('hidden', 'show');
+  void el.offsetWidth;  // restart the CSS animation
+  el.classList.add('show');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => el.classList.add('hidden'), 2800);
 }
 
 // Widen or narrow the next few pipes; ones already on screen visibly slide open/shut.
@@ -667,7 +700,7 @@ function crash(hit) {
   if (game.shield) {
     game.shield = false;
     game.invuln = 1.5;
-    addPopup('Shield saved you!', birdX, game.bird.y - 0.06, '#7dffa0', 0.045);
+    showBanner('🛡️ Shield saved you!', '', true);
     beep(660, 0.2);
     return;
   }
@@ -940,7 +973,7 @@ function showStart() { $('startBtn').classList.remove('hidden'); }
 function hideStart() { $('startBtn').classList.add('hidden'); }
 function showOnly(id) {
   for (const o of ['menu', 'pauseMenu', 'overMenu']) $(o).classList.toggle('hidden', o !== id);
-  if (id) $('countdown').classList.add('hidden');
+  if (id) { $('countdown').classList.add('hidden'); $('banner').classList.add('hidden'); }
   if (id === 'menu') refreshMenu();
 }
 function setHud(visible) {

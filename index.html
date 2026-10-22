@@ -65,13 +65,33 @@
   button.big.secondary { background: #e6e1d3; color: var(--ink); box-shadow: 0 4px 0 #c4bea9; }
   button.big.go { background: var(--green); box-shadow: 0 4px 0 #2c7a37; }
   button.big:disabled { opacity: .45; }
+  /* Connected: reads as a status badge rather than something to press */
+  button.big.connected, button.big.connected:disabled { opacity: 1; background: #e3f4e5; color: #2c7a37;
+                                                        box-shadow: inset 0 0 0 2px var(--green); transform: none; }
+  button.big.connected small { display: block; font-size: 13px; font-weight: 500; opacity: .8; }
   label.setting { display: flex; align-items: center; justify-content: space-between; gap: 10px;
                   margin: 14px 0 6px; font-size: 15px; text-align: left; }
   label.setting input { width: 90px; font: inherit; font-size: 18px; padding: 8px; text-align: center;
                         border-radius: 10px; border: 2px solid #c4bea9; background: #fff; color: var(--ink); }
   .hint { font-size: 13px; opacity: .7; margin: 6px 0 0; }
   #status { min-height: 1.3em; margin: 10px 0 0; font-weight: 600; }
+  #status:empty { display: none; }
+  .hint.best { margin-top: 0; }
   .hidden { display: none !important; }
+
+  /* Sideways phone: intro on the left, controls on the right, so nothing needs scrolling */
+  @media (orientation: landscape) and (max-height: 520px) {
+    .menu-card { max-width: 720px; display: grid; grid-template-columns: 1fr 1.5fr; gap: 24px;
+                 align-items: center; padding: 16px 20px; }
+    .menu-card h1 { font-size: 34px; }
+    .menu-card .sub { margin-bottom: 10px; }
+    .source-buttons { display: flex; gap: 10px; }
+    .source-buttons button.big { margin: 0; }
+    .menu-controls button.big { font-size: 17px; padding: 12px; }
+    .menu-controls label.setting { margin-top: 10px; }
+    .menu-controls #status { margin-top: 6px; }
+    .menu-controls #startBtn { margin-bottom: 0; }
+  }
 </style>
 </head>
 <body>
@@ -91,22 +111,27 @@
 
 <!-- Main menu -->
 <div id="menu" class="overlay">
-  <div class="card">
-    <h1>Row Bird</h1>
-    <p class="sub">Every stroke is a flap. Pull harder to fly higher.</p>
+  <div class="card menu-card">
+    <div class="menu-intro">
+      <h1>Row Bird</h1>
+      <p class="sub">Every stroke is a flap. Pull harder to fly higher.</p>
+      <p class="hint best">Best: <span id="bestMenu">0</span></p>
+    </div>
+    <div class="menu-controls">
+      <div class="source-buttons">
+        <button id="connectBtn" class="big">Connect PM5</button>
+        <button id="simBtn" class="big secondary">Try without rower</button>
+      </div>
 
-    <button id="connectBtn" class="big">Connect PM5</button>
-    <button id="simBtn" class="big secondary">Try without rower</button>
+      <label class="setting">Target power (watts)
+        <input id="targetInput" type="number" inputmode="numeric" min="30" max="600" step="5">
+      </label>
+      <p class="hint">A stroke at your target keeps the bird level. Harder strokes fly higher, lighter ones sink.</p>
 
-    <label class="setting">Target power (watts)
-      <input id="targetInput" type="number" inputmode="numeric" min="30" max="600" step="5">
-    </label>
-    <p class="hint">A stroke at your target keeps the bird level. Harder strokes fly higher, lighter ones sink.</p>
-
-    <p id="status"></p>
-    <button id="startBtn" class="big go hidden">Start</button>
-    <p class="hint" id="rotateHint">Tip: turn your phone sideways to see obstacles coming sooner.</p>
-    <p class="hint">Best: <span id="bestMenu">0</span></p>
+      <p id="status"></p>
+      <button id="startBtn" class="big go hidden">Start</button>
+      <p class="hint" id="rotateHint">Tip: turn your phone sideways to see obstacles coming sooner.</p>
+    </div>
   </div>
 </div>
 
@@ -210,6 +235,7 @@ let lastStrokeState = -1;
 let lastStrokeCount = -1;
 
 async function connectPM5() {
+  setConnectButton('connecting');
   setStatus('Choose your PM5 in the pop-up…');
   try {
     pm5Device = await navigator.bluetooth.requestDevice({
@@ -233,10 +259,12 @@ async function connectPM5() {
     await subscribe(service, PM5.strokeData2, onStrokeData2);
 
     rower.source = 'pm5';
-    setStatus(`Connected to ${pm5Device.name}. Ready!`);
+    setConnectButton('connected', pm5Device.name);
+    setStatus('');
     showStart();
   } catch (e) {
     console.error(e);
+    setConnectButton('idle');
     if (e.name === 'NotFoundError') setStatus('No rower chosen. Wake the PM5 and try again.');
     else setStatus('Could not connect: ' + e.message);
   }
@@ -269,6 +297,7 @@ function onStrokeData2(dv) {
 function onPM5Disconnected() {
   rower.source = null;
   rower.spm = rower.watts = rower.pace = 0;
+  setConnectButton('idle');
   setStatus('Rower disconnected. Tap Connect PM5 to reconnect.');
   hideStart();
   pause('Rower disconnected.');
@@ -662,6 +691,23 @@ function drawPowerBar() {
  * UI wiring
  * ------------------------------------------------------------------ */
 function setStatus(text) { $('status').textContent = text; }
+function setConnectButton(state, deviceName = '') {
+  const btn = $('connectBtn');
+  btn.classList.toggle('connected', state === 'connected');
+  btn.disabled = state !== 'idle';
+  $('simBtn').disabled = state === 'connected';  // one data source at a time
+  if (state === 'connected') {
+    $('simBtn').textContent = 'Try without rower';
+    $('simBtn').classList.remove('connected');
+  }
+  if (state === 'connected') {
+    btn.textContent = '✓ Connected';
+    btn.insertAdjacentHTML('beforeend', '<small></small>');
+    btn.querySelector('small').textContent = deviceName;
+  } else {
+    btn.textContent = state === 'connecting' ? 'Connecting…' : 'Connect PM5';
+  }
+}
 function showStart() { $('startBtn').classList.remove('hidden'); }
 function hideStart() { $('startBtn').classList.add('hidden'); }
 function showOnly(id) {
@@ -700,6 +746,8 @@ document.addEventListener('visibilitychange', () => {
 $('connectBtn').addEventListener('click', connectPM5);
 $('simBtn').addEventListener('click', () => {
   rower.source = 'sim';
+  $('simBtn').textContent = '✓ Simulator on';
+  $('simBtn').classList.add('connected');
   setStatus('Simulator: press and hold the screen for each stroke. Hold ~½ second for target power, longer for more.');
   showStart();
 });

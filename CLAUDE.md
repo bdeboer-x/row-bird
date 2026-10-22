@@ -19,7 +19,7 @@ The script runs top to bottom in these sections:
 2. **Settings:** menu choices (`settings.mode` endless/timed, `durationIdx`, `powerups`), persisted in localStorage.
 3. **Rower data:** the `rower` object (spm, pace, last-stroke watts) plus two input sources. Both call the same two hooks, `driveStart()` and `driveEnd(watts)`:
    - **PM5 over Web Bluetooth** (`connectPM5`)
-   - **Simulator:** press and hold the screen or space bar as a drive. Holding for 0.5s gives a target-power stroke; longer holds are harder.
+   - **Simulator:** press and hold the screen or space bar as a drive. Holding for 0.5s gives a target-power stroke; longer holds are harder. The menu's simulator button is a toggle (tap again to turn it off).
 4. **Game:** the `game` state object, `update(dt)`, collisions, items, scoring, `endRun`.
 5. **Drawing:** canvas rendering.
 6. **UI wiring:** menus, HUD, buttons.
@@ -60,6 +60,8 @@ These follow Concept2's "PM5 Bluetooth Smart Interface Definition". Service UUID
   - Best scores are stored per mode and length.
 - **Power-ups** (menu toggle, on by default) float halfway between gates, `ITEM_CHANCE = 0.18`. This was halved from 0.35 after the owner found 0.35 too many. 60% good / 40% bad.
   - Good: shield, heart (Endless) / +3 star (Timed, or at max lives), feather (gravity ×0.75 for 12s), wide gaps (next 4 gates +0.1).
+  - Lives are capped at `MAX_LIVES` (5) twice: `pickItemType` spawns a star instead of a heart at max lives, and `collect` turns a heart into a star if you reached max lives after it was placed (items are placed about a gate ahead).
+  - A shield gives 3s of invulnerability after it blocks a hit. That must be longer than the ~1.55s it takes to cross a gate (`(GATE_W + 2*0.8*BIRD_R) / SCROLL`); at 1.5s the bird used to crash into the same gate again and lose the life and point anyway. Re-check this if you change `SCROLL`, `GATE_W` or `BIRD_R`.
   - Bad: anchor (gravity ×1.25 for 12s, needing ~30% more watts), storm (next 4 gates −0.07, min 0.22).
   - Pickups are announced with a **large banner across the top** (`showBanner`). The owner asked for this because small text near the bird went unnoticed. Active timed effects also show as chips under the score.
 - **Phone held sideways is the intended view.** Upright, you only see about 1.5s ahead. The menu switches to a two-column layout for short landscape screens (`@media (orientation: landscape) and (max-height: 520px)`) so it fits without scrolling.

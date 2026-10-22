@@ -538,6 +538,8 @@ function pickItemType() {
 
 function collect(item) {
   item.taken = true;
+  // A heart placed before you reached max lives pays out as a star instead.
+  if (item.type === 'heart' && game.lives >= MAX_LIVES) item.type = 'star';
   const kind = ITEMS[item.type];
   switch (item.type) {
     case 'shield': game.shield = true; break;

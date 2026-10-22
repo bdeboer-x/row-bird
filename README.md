@@ -9,10 +9,10 @@ The whole game is `index.html`: no server, no libraries, no data collection. It 
 Open the GitHub Pages URL in **Chrome on Android**, wake the PM5, tap **Connect PM5**, pick it from the list, and start.
 Holding the phone sideways gives you more warning before each obstacle.
 
-- **Glide mode:** your pace sets your height. Cruise pace (set in the menu) flies mid-screen, faster flies higher, and stopping sinks you.
-- **Flap mode:** every stroke is a flap. Harder strokes flap higher.
+Every stroke is a flap. The bird hops as your drive starts, then gets its main lift when the drive ends, sized by that stroke's power.
+Set your **target power** in the menu: a stroke at target power at about 24 strokes a minute keeps the bird level, harder strokes climb, and lighter ones sink.
 
-**Try without rower** lets you play by tapping the screen once per stroke (about 24 taps a minute = cruise).
+**Try without rower** lets you play by pressing and holding the screen for each stroke. Holding about half a second is a target-power stroke, and longer is harder.
 
 ## Host on GitHub Pages
 

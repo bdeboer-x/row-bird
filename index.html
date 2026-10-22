@@ -35,10 +35,25 @@
   #pauseBtn { pointer-events: auto; font-size: 20px; width: 44px; height: 44px; border-radius: 50%;
               border: 0; background: rgba(255,255,255,.7); color: var(--ink); }
 
+  /* 3, 2, 1, GOOO! */
+  #countdown { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+               pointer-events: none; font-size: min(40vh, 40vw); font-weight: 900; color: #fff;
+               -webkit-text-stroke: 4px var(--ink); text-shadow: 0 8px 0 rgba(0,0,0,.25); }
+  #countdown.go { color: var(--accent); font-size: min(26vh, 22vw); }
+  #countdown.pop { animation: pop .9s ease-out forwards; }
+  @keyframes pop {
+    0%   { transform: scale(.3); opacity: 0; }
+    20%  { transform: scale(1.1); opacity: 1; }
+    35%  { transform: scale(1); }
+    80%  { opacity: 1; }
+    100% { transform: scale(1.15); opacity: 0; }
+  }
+
   /* Menu / game-over overlays */
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
              padding: 16px; background: rgba(20,40,60,.25); }
   .card { background: var(--card); border-radius: 20px; padding: 24px 20px; width: 100%; max-width: 380px;
+          max-height: 100%; overflow-y: auto;
           box-shadow: 0 10px 30px rgba(0,0,0,.25); text-align: center; }
   h1 { margin: 0 0 4px; font-size: 40px; letter-spacing: -.02em; }
   h2 { margin: 0 0 8px; font-size: 32px; }
@@ -50,14 +65,10 @@
   button.big.secondary { background: #e6e1d3; color: var(--ink); box-shadow: 0 4px 0 #c4bea9; }
   button.big.go { background: var(--green); box-shadow: 0 4px 0 #2c7a37; }
   button.big:disabled { opacity: .45; }
-  .row { display: flex; gap: 8px; margin: 14px 0; }
-  .seg { flex: 1; font: inherit; font-size: 15px; padding: 12px 6px; border-radius: 12px;
-         border: 2px solid #c4bea9; background: transparent; color: var(--ink); }
-  .seg.on { border-color: var(--accent); background: #ffe6d3; font-weight: 700; }
-  label.pace { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-               margin: 10px 0; font-size: 15px; }
-  label.pace input { width: 90px; font: inherit; font-size: 18px; padding: 8px; text-align: center;
-                     border-radius: 10px; border: 2px solid #c4bea9; background: #fff; color: var(--ink); }
+  label.setting { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                  margin: 14px 0 6px; font-size: 15px; text-align: left; }
+  label.setting input { width: 90px; font: inherit; font-size: 18px; padding: 8px; text-align: center;
+                        border-radius: 10px; border: 2px solid #c4bea9; background: #fff; color: var(--ink); }
   .hint { font-size: 13px; opacity: .7; margin: 6px 0 0; }
   #status { min-height: 1.3em; margin: 10px 0 0; font-weight: 600; }
   .hidden { display: none !important; }
@@ -76,25 +87,21 @@
   <div class="stat"><b id="pace">–</b><span>/500m</span></div>
   <div class="stat"><b id="watts">–</b><span>watts</span></div>
 </div>
+<div id="countdown" class="hidden"></div>
 
 <!-- Main menu -->
 <div id="menu" class="overlay">
   <div class="card">
     <h1>Row Bird</h1>
-    <p class="sub">Row to fly. Stop rowing and you sink.</p>
+    <p class="sub">Every stroke is a flap. Pull harder to fly higher.</p>
 
     <button id="connectBtn" class="big">Connect PM5</button>
     <button id="simBtn" class="big secondary">Try without rower</button>
 
-    <div class="row">
-      <button class="seg" data-mode="speed">Glide<br><small>speed = lift</small></button>
-      <button class="seg" data-mode="stroke">Flap<br><small>each stroke flaps</small></button>
-    </div>
-
-    <label class="pace">Cruise pace (level flight)
-      <input id="paceInput" inputmode="numeric" value="2:20">
+    <label class="setting">Target power (watts)
+      <input id="targetInput" type="number" inputmode="numeric" min="30" max="600" step="5">
     </label>
-    <p class="hint" id="modeHint"></p>
+    <p class="hint">A stroke at your target keeps the bird level. Harder strokes fly higher, lighter ones sink.</p>
 
     <p id="status"></p>
     <button id="startBtn" class="big go hidden">Start</button>
@@ -136,23 +143,22 @@ const SCROLL = 0.12;        // world scroll speed, screen-heights per second
 const SPACING = 0.95;       // distance between pipes (~8s apart)
 const START_LIVES = 3;
 
-// Glide mode: your speed picks a cruising height; the bird drifts toward it.
-// Cruise pace = mid-screen; each 1 m/s faster is a third of the screen higher.
-const CRUISE_Y = 0.45;
-const HEIGHT_PER_MS = 0.33; // screen per (m/s) away from cruise speed
-const MAX_RISE = 0.2;
-const MAX_FALL = 0.12;      // when stopped, sinks from mid-screen in ~3.5s
-
-// Flap mode: gentle gravity so one stroke every ~2.5s keeps you level.
+// Gentle gravity so one target-power stroke every ~2.5s keeps you level.
 const GRAVITY = 0.1;
-const FLAP_V = 0.13;
-const MAX_FALL_FLAP = 0.2;
+const MAX_FALL = 0.2;
+// Each stroke is a small hop when the drive starts, then the main lift when
+// it ends and we know how hard it was.
+const HOP_V = 0.04;
+const FLAP_V = 0.085;       // lift from a stroke at exactly target power
+const MIN_LIFT = 0.35, MAX_LIFT = 1.8;  // lift scales with watts, within these limits
+const DRIVE_TIMEOUT = 2;    // lift anyway if the power reading never arrives
 
 /* ------------------------------------------------------------------
  * Small helpers
  * ------------------------------------------------------------------ */
 const $ = id => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const nowSec = () => performance.now() / 1000;
 
 // localStorage can be unavailable (private mode etc.); never let that break the game.
 const store = {
@@ -170,28 +176,20 @@ function formatPace(sec) {
   const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 }
-function parsePace(text) {
-  const m = /^\s*(\d+):(\d{1,2})\s*$/.exec(text);
-  if (!m) return null;
-  const sec = +m[1] * 60 + +m[2];
-  return sec >= 60 && sec <= 360 ? sec : null;
-}
+// Concept2's own formula: watts = 2.80 / (sec per meter)^3
+const paceForWatts = w => w > 0 ? 500 / Math.cbrt(w / 2.8) : 0;
 
 /* ------------------------------------------------------------------
  * Rower data. Either a real PM5 over Bluetooth or the tap simulator
- * fills in this object; the game only reads from here.
+ * fills this in and calls driveStart() / driveEnd(watts) each stroke.
  * ------------------------------------------------------------------ */
 const rower = {
   source: null,  // 'pm5' | 'sim' | null
-  speed: 0,      // m/s
   spm: 0,
   pace: 0,       // seconds per 500m
-  watts: 0,
+  watts: 0,      // power of the last finished stroke
 };
-let cruisePace = parsePace(store.get('pace', '2:20')) || 140;
-const cruiseSpeed = () => 500 / cruisePace;
-// Concept2's own pace-to-watts formula: watts = 2.80 * (m/s)^3
-const wattsForSpeed = v => 2.8 * v ** 3;
+let targetWatts = clamp(store.get('target', 120), 30, 600);
 
 /* --- Concept2 PM5 Bluetooth -------------------------------------
  * Based on Concept2's published "PM5 Bluetooth Smart Interface
@@ -201,14 +199,13 @@ const pm5Uuid = n => `ce06${n}-43e5-11e4-916c-0800200c9a66`;
 const PM5 = {
   rowingService: pm5Uuid('0030'),
   generalStatus: pm5Uuid('0031'),     // byte 10: stroke state (2 = driving)
-  additionalStatus: pm5Uuid('0032'),  // speed, stroke rate, pace
+  additionalStatus: pm5Uuid('0032'),  // stroke rate, pace
   sampleRate: pm5Uuid('0034'),        // write 3 => updates every 100ms
-  strokeData2: pm5Uuid('0036'),       // per-stroke power and stroke count
+  strokeData2: pm5Uuid('0036'),       // per-stroke power and stroke count, sent as the drive ends
 };
 const u16 = (dv, o) => dv.getUint16(o, true);
 
 let pm5Device = null;
-let flappedThisStroke = false;
 let lastStrokeState = -1;
 let lastStrokeCount = -1;
 
@@ -224,7 +221,7 @@ async function connectPM5() {
     const server = await pm5Device.gatt.connect();
     const service = await server.getPrimaryService(PM5.rowingService);
 
-    // Ask for faster updates so flaps feel immediate. Not fatal if refused.
+    // Ask for faster updates so the drive is noticed quickly. Not fatal if refused.
     try {
       const rate = await service.getCharacteristic(PM5.sampleRate);
       await rate.writeValue(Uint8Array.of(3));
@@ -253,135 +250,182 @@ async function subscribe(service, uuid, handler) {
 
 function onGeneralStatus(dv) {
   const strokeState = dv.getUint8(10);
-  // Flap the instant the drive starts, using the previous stroke's power.
-  if (strokeState === 2 && lastStrokeState !== 2) {
-    flappedThisStroke = true;
-    strokeEvent(rower.watts || wattsForSpeed(cruiseSpeed()));
-  }
+  if (strokeState === 2 && lastStrokeState !== 2) driveStart();
   lastStrokeState = strokeState;
 }
 
 function onAdditionalStatus(dv) {
-  rower.speed = u16(dv, 3) / 1000;
   rower.spm = dv.getUint8(5);
   rower.pace = u16(dv, 7) / 100;
 }
 
 function onStrokeData2(dv) {
-  rower.watts = u16(dv, 3);
   const count = u16(dv, 7);
   if (count === lastStrokeCount) return;
   lastStrokeCount = count;
-  // Backup in case the 'driving' state was missed between status samples.
-  if (!flappedThisStroke) strokeEvent(rower.watts);
-  flappedThisStroke = false;
+  driveEnd(u16(dv, 3));
 }
 
 function onPM5Disconnected() {
   rower.source = null;
-  rower.speed = rower.spm = rower.watts = rower.pace = 0;
+  rower.spm = rower.watts = rower.pace = 0;
   setStatus('Rower disconnected. Tap Connect PM5 to reconnect.');
   hideStart();
-  if (game.state === 'playing') pause('Rower disconnected.');
+  pause('Rower disconnected.');
 }
 
-/* --- Simulator: tap the screen (or press space) once per stroke ---
- * Speed tracks your tap rhythm: 24 taps a minute = cruise pace.
+/* --- Simulator: press and hold the screen (or space) as the drive ---
+ * Holding about half a second is a target-power stroke; longer is harder.
  * ---------------------------------------------------------------- */
-const sim = { taps: [], targetSpeed: 0 };
+const sim = { strokeTimes: [], driveStartedAt: null };
 
-function simTap() {
-  const now = performance.now() / 1000;
-  sim.taps.push(now);
-  if (sim.taps.length > 3) sim.taps.shift();
-  if (sim.taps.length >= 2) {
-    const interval = (sim.taps.at(-1) - sim.taps[0]) / (sim.taps.length - 1);
+function simPress() {
+  if (sim.driveStartedAt !== null) return;
+  const now = nowSec();
+  sim.driveStartedAt = now;
+  sim.strokeTimes.push(now);
+  if (sim.strokeTimes.length > 3) sim.strokeTimes.shift();
+  if (sim.strokeTimes.length >= 2) {
+    const interval = (now - sim.strokeTimes[0]) / (sim.strokeTimes.length - 1);
     rower.spm = Math.round(60 / interval);
-  } else {
-    rower.spm = 20;
   }
-  sim.targetSpeed = clamp(cruiseSpeed() * rower.spm / 24, 0, 6.5);
-  strokeEvent(wattsForSpeed(sim.targetSpeed));
+  driveStart();
 }
 
-function updateSim(dt) {
-  const sinceLastTap = performance.now() / 1000 - (sim.taps.at(-1) ?? -99);
-  if (sinceLastTap > 4) { sim.targetSpeed = 0; rower.spm = 0; }
-  rower.speed += (sim.targetSpeed - rower.speed) * Math.min(1, dt * 1.2);
-  rower.watts = Math.round(wattsForSpeed(rower.speed));
-  rower.pace = rower.speed > 0.3 ? 500 / rower.speed : 0;
+function simRelease() {
+  if (sim.driveStartedAt === null) return;
+  const held = nowSec() - sim.driveStartedAt;
+  sim.driveStartedAt = null;
+  const watts = Math.round(targetWatts * clamp(held / 0.5, 0.25, 2.5));
+  rower.pace = paceForWatts(watts);
+  driveEnd(watts);
+}
+
+function updateSim() {
+  if (nowSec() - (sim.strokeTimes.at(-1) ?? -99) > 6) rower.spm = 0;
 }
 
 /* ------------------------------------------------------------------
  * Game
  * ------------------------------------------------------------------ */
 const game = {
-  state: 'menu',  // 'menu' | 'playing' | 'paused' | 'over'
-  mode: store.get('mode', 'speed'),  // 'speed' (glide) | 'stroke' (flap)
+  state: 'menu',  // 'menu' | 'countdown' | 'playing' | 'paused' | 'over'
   bird: { y: 0.45, vy: 0, flap: 0 },
   pipes: [],
+  popups: [],     // floating watts numbers
   score: 0,
   lives: START_LIVES,
   invuln: 0,      // seconds of post-hit invincibility left
+  countdown: 0,   // seconds left before play (re)starts
+  driveTimer: 0,  // >0 while waiting for the current stroke's power
+  lastLiftAt: -99,
   best: store.get('best', 0),
   scrollX: 0,
-  smoothSpeed: 0,
   time: 0,
 };
 
 function startGame() {
-  game.state = 'playing';
   game.bird = { y: 0.45, vy: 0, flap: 0 };
   game.pipes = [];
+  game.popups = [];
   game.score = 0;
   game.lives = START_LIVES;
   game.invuln = 0;
   addPipe(worldW + 0.4);
   showOnly(null);
   setHud(true);
+  updateHud(Infinity);
   keepScreenOn();
+  startCountdown();
+}
+
+function startCountdown() {
+  game.state = 'countdown';
+  game.countdown = 3;
+  game.bird.vy = 0;
+  showCountdownNumber(3);
+}
+
+function showCountdownNumber(n) {
+  const el = $('countdown');
+  el.textContent = n > 0 ? n : 'GOOO!';
+  el.classList.toggle('go', n === 0);
+  el.classList.remove('hidden', 'pop');
+  void el.offsetWidth;  // restart the CSS animation
+  el.classList.add('pop');
+  beep(n > 0 ? 520 : 880, n > 0 ? 0.15 : 0.5);
 }
 
 function addPipe(x) {
   const prev = game.pipes.at(-1);
   const gapSize = Math.max(0.28, 0.42 - game.score * 0.005);
-  // Keep each gap within reach of the last one; climbing is slow on purpose.
+  // Keep each gap within reach of the last one.
   const center = prev ? clamp(prev.center + (Math.random() - 0.5) * 0.4, 0.27, 0.66)
                       : 0.45;
   game.pipes.push({ x, center, gapSize, passed: false });
 }
 
-function strokeEvent(watts) {
+// The drive has begun: a small hop right away so the bird feels connected to you.
+function driveStart() {
+  game.bird.flap = 0.5;
+  if (game.state !== 'playing') return;
+  game.bird.vy = Math.min(game.bird.vy, -HOP_V);
+  game.driveTimer = DRIVE_TIMEOUT;
+}
+
+// The drive has finished and we know its power: the main lift.
+function driveEnd(watts) {
+  rower.watts = watts;
   game.bird.flap = 1;
-  if (game.state !== 'playing' || game.mode !== 'stroke') return;
-  // Harder strokes flap higher, but softly (square root) so it stays controllable.
-  const power = clamp(Math.sqrt(watts / wattsForSpeed(cruiseSpeed())), 0.6, 1.5);
-  game.bird.vy = -FLAP_V * power;
+  if (game.state !== 'playing') return;
+  game.driveTimer = 0;
+  // Ignore a second report for the same stroke (e.g. after the timeout fallback).
+  if (game.time - game.lastLiftAt < 0.8) return;
+  game.lastLiftAt = game.time;
+
+  const ratio = watts / targetWatts;
+  game.bird.vy = -FLAP_V * clamp(ratio, MIN_LIFT, MAX_LIFT);
+  game.popups.push({ text: watts + 'W', y: game.bird.y - 0.06, age: 0, color: powerColor(ratio) });
+}
+
+function powerColor(ratio) {
+  if (ratio < 0.8) return '#ff8c42';   // light
+  if (ratio < 1.2) return '#ffffff';   // on target
+  if (ratio < 1.6) return '#7dffa0';   // strong
+  return '#ffe14d';                    // huge
 }
 
 function update(dt) {
   game.time += dt;
-  if (rower.source === 'sim') updateSim(dt);
-  game.smoothSpeed += (rower.speed - game.smoothSpeed) * Math.min(1, dt * 1.5);
+  if (rower.source === 'sim') updateSim();
   game.bird.flap = Math.max(0, game.bird.flap - dt * 3);
+  for (const p of game.popups) { p.age += dt; p.y -= dt * 0.08; }
+  game.popups = game.popups.filter(p => p.age < 1.2);
 
-  if (game.state !== 'playing') {
-    if (game.state === 'menu') {
-      game.scrollX += SCROLL * 0.5 * dt;
-      game.bird.y = 0.45 + Math.sin(game.time * 2) * 0.02;
-    }
+  if (game.state === 'menu') {
+    game.scrollX += SCROLL * 0.5 * dt;
+    game.bird.y = 0.45 + Math.sin(game.time * 2) * 0.02;
     return;
   }
+  if (game.state === 'countdown') {
+    game.scrollX += SCROLL * 0.5 * dt;
+    const before = Math.ceil(game.countdown);
+    game.countdown -= dt;
+    const after = Math.ceil(game.countdown);
+    if (after !== before) showCountdownNumber(Math.max(0, after));
+    if (game.countdown <= 0) game.state = 'playing';
+    return;
+  }
+  if (game.state !== 'playing') return;
 
   game.scrollX += SCROLL * dt;
   const b = game.bird;
 
-  if (game.mode === 'speed') {
-    const targetVy = clamp(glideTargetY() - b.y, -MAX_RISE, MAX_FALL);
-    b.vy += (targetVy - b.vy) * Math.min(1, dt * 3);
-  } else {
-    b.vy = Math.min(b.vy + GRAVITY * dt, MAX_FALL_FLAP);
+  if (game.driveTimer > 0) {
+    game.driveTimer -= dt;
+    if (game.driveTimer <= 0) driveEnd(rower.watts || targetWatts);
   }
+  b.vy = Math.min(b.vy + GRAVITY * dt, MAX_FALL);
   b.y += b.vy * dt;
   if (b.y < BIRD_R) { b.y = BIRD_R; b.vy = Math.max(0, b.vy); }
 
@@ -401,10 +445,6 @@ function update(dt) {
   } else if (hitSomething()) {
     loseLife();
   }
-}
-
-function glideTargetY() {
-  return clamp(CRUISE_Y - (game.smoothSpeed - cruiseSpeed()) * HEIGHT_PER_MS, BIRD_R, 1);
 }
 
 function hitSomething() {
@@ -433,11 +473,28 @@ function gameOver() {
 }
 
 function pause(message = '') {
-  if (game.state !== 'playing') return;
+  if (game.state !== 'playing' && game.state !== 'countdown') return;
   game.state = 'paused';
+  $('countdown').classList.add('hidden');
   $('pauseMsg').textContent = message;
   $('resumeBtn').disabled = !rower.source;
   showOnly('pauseMenu');
+}
+
+/* --- Sound: short beeps for the countdown -------------------------- */
+let audio = null;
+function beep(freq, duration) {
+  try {
+    audio ??= new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.15, audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + duration);
+    osc.connect(gain).connect(audio.destination);
+    osc.start();
+    osc.stop(audio.currentTime + duration);
+  } catch {}
 }
 
 /* ------------------------------------------------------------------
@@ -473,9 +530,8 @@ function draw() {
   for (const p of game.pipes) drawPipe(p);
   drawWater();
   drawBird();
-  if (game.state === 'playing' || game.state === 'paused') {
-    if (game.mode === 'speed') { drawSpeedGauge(); drawGlideTarget(); }
-  }
+  drawPopups();
+  if (game.state !== 'menu' && game.state !== 'over') drawPowerBar();
 }
 
 function drawClouds() {
@@ -540,8 +596,9 @@ function drawWater() {
 function drawBird() {
   const b = game.bird, r = BIRD_R;
   if (game.invuln > 0 && Math.floor(game.invuln * 8) % 2) return;  // blink after a hit
+  const bob = game.state === 'countdown' ? Math.sin(game.time * 4) * 0.01 : 0;
   ctx.save();
-  ctx.translate(birdX, b.y);
+  ctx.translate(birdX, b.y + bob);
   ctx.rotate(clamp(b.vy * 3, -0.5, 0.7));
   ctx.lineWidth = r * 0.12;
   ctx.strokeStyle = '#4a3b00';
@@ -571,27 +628,34 @@ function drawBird() {
   ctx.restore();
 }
 
-// Faint ring showing the height your current pace is taking you to.
-function drawGlideTarget() {
-  ctx.strokeStyle = 'rgba(255,255,255,.7)';
-  ctx.lineWidth = 0.004;
-  ctx.setLineDash([0.01, 0.01]);
-  ctx.beginPath(); ctx.arc(birdX + 0.09, Math.min(glideTargetY(), GROUND), BIRD_R * 0.6, 0, Math.PI * 2); ctx.stroke();
-  ctx.setLineDash([]);
+// Each stroke's watts float up from the bird, colored by how hard it was.
+function drawPopups() {
+  ctx.save();
+  ctx.font = 'bold 0.05px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 0.014;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(29,43,54,.85)';
+  for (const p of game.popups) {
+    ctx.globalAlpha = clamp(1.6 - p.age * 1.4, 0, 1);
+    ctx.fillStyle = p.color;
+    ctx.strokeText(p.text, birdX, p.y);
+    ctx.fillText(p.text, birdX, p.y);
+  }
+  ctx.restore();
 }
 
-// Vertical bar on the right: how fast you're going vs. the cruise line.
-function drawSpeedGauge() {
+// Vertical bar on the right: last stroke's power; the white line is your target.
+function drawPowerBar() {
   const x = worldW - 0.05, top = 0.18, h = 0.5, w = 0.022;
-  const max = cruiseSpeed() * 1.6;
-  const level = clamp(game.smoothSpeed / max, 0, 1);
-  const cruiseY = top + h * (1 - 1 / 1.6);
+  const ratio = rower.watts / targetWatts;
+  const level = clamp(ratio / 2, 0, 1);  // bar tops out at double the target
   ctx.fillStyle = 'rgba(0,0,0,.2)';
   ctx.fillRect(x, top, w, h);
-  ctx.fillStyle = game.smoothSpeed >= cruiseSpeed() ? '#3fa34d' : '#ff8c42';
+  ctx.fillStyle = ratio < 0.8 ? '#ff8c42' : '#3fa34d';
   ctx.fillRect(x, top + h * (1 - level), w, h * level);
   ctx.fillStyle = '#fff';
-  ctx.fillRect(x - 0.012, cruiseY - 0.002, w + 0.024, 0.004);
+  ctx.fillRect(x - 0.012, top + h / 2 - 0.002, w + 0.024, 0.004);
 }
 
 /* ------------------------------------------------------------------
@@ -602,19 +666,11 @@ function showStart() { $('startBtn').classList.remove('hidden'); }
 function hideStart() { $('startBtn').classList.add('hidden'); }
 function showOnly(id) {
   for (const o of ['menu', 'pauseMenu', 'overMenu']) $(o).classList.toggle('hidden', o !== id);
+  if (id) $('countdown').classList.add('hidden');
 }
 function setHud(visible) {
   $('hudTop').classList.toggle('hidden', !visible);
   $('hudBottom').classList.toggle('hidden', !visible);
-}
-
-function setMode(mode) {
-  game.mode = mode;
-  store.set('mode', mode);
-  document.querySelectorAll('.seg').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
-  $('modeHint').textContent = mode === 'speed'
-    ? 'Your pace sets your height: cruise pace flies mid-screen, faster flies higher, stopping sinks. The dotted ring shows where you\'re heading.'
-    : 'Every stroke is a flap. Harder strokes flap higher.';
 }
 
 let hudTimer = 0;
@@ -637,53 +693,55 @@ async function keepScreenOn() {
   if (wakeLock) wakeLock.addEventListener('release', () => { wakeLock = null; }, { once: true });
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && game.state === 'playing') keepScreenOn();
+  if (document.visibilityState === 'visible' && game.state !== 'menu') keepScreenOn();
   if (document.visibilityState === 'hidden') pause('Paused while the app was in the background.');
 });
 
 $('connectBtn').addEventListener('click', connectPM5);
 $('simBtn').addEventListener('click', () => {
   rower.source = 'sim';
-  setStatus('Simulator: tap anywhere once per stroke. ~24 taps a minute = cruise.');
+  setStatus('Simulator: press and hold the screen for each stroke. Hold ~½ second for target power, longer for more.');
   showStart();
 });
 $('startBtn').addEventListener('click', startGame);
 $('againBtn').addEventListener('click', startGame);
 $('menuBtn').addEventListener('click', () => { game.state = 'menu'; showOnly('menu'); });
 $('pauseBtn').addEventListener('click', ev => { ev.stopPropagation(); pause(); });
-$('resumeBtn').addEventListener('click', () => { game.state = 'playing'; showOnly(null); keepScreenOn(); });
+$('resumeBtn').addEventListener('click', () => { showOnly(null); keepScreenOn(); startCountdown(); });
 $('quitBtn').addEventListener('click', () => { game.state = 'menu'; setHud(false); showOnly('menu'); });
-document.querySelectorAll('.seg').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
-$('paceInput').value = formatPace(cruisePace);
-$('paceInput').addEventListener('change', () => {
-  const sec = parsePace($('paceInput').value);
-  if (sec) { cruisePace = sec; store.set('pace', formatPace(sec)); }
-  $('paceInput').value = formatPace(cruisePace);
+$('targetInput').value = targetWatts;
+$('targetInput').addEventListener('change', () => {
+  const w = Math.round(+$('targetInput').value);
+  if (w >= 30 && w <= 600) { targetWatts = w; store.set('target', w); }
+  $('targetInput').value = targetWatts;
 });
 
-// Simulator input: tap the playfield or press space.
-canvas.addEventListener('pointerdown', () => { if (rower.source === 'sim' && game.state === 'playing') simTap(); });
+// Simulator input: hold the playfield or the space bar as the drive.
+const simActive = () => rower.source === 'sim' && (game.state === 'playing' || game.state === 'countdown');
+canvas.addEventListener('pointerdown', () => { if (simActive()) simPress(); });
+addEventListener('pointerup', simRelease);
+addEventListener('pointercancel', simRelease);
 addEventListener('keydown', ev => {
-  if (ev.code === 'Space' && rower.source === 'sim' && game.state === 'playing') { ev.preventDefault(); simTap(); }
+  if (ev.code === 'Space' && simActive()) { ev.preventDefault(); if (!ev.repeat) simPress(); }
 });
+addEventListener('keyup', ev => { if (ev.code === 'Space') simRelease(); });
 
 if (!navigator.bluetooth) {
   $('connectBtn').disabled = true;
   setStatus('Bluetooth needs Chrome on Android, opened from an https:// address.');
 }
 $('bestMenu').textContent = game.best;
-setMode(game.mode);
 addEventListener('resize', resize);
 resize();
 
 let lastFrame = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - lastFrame) / 1000);  // cap so a stall doesn't teleport the bird
+  const dt = clamp((now - lastFrame) / 1000, 0, 0.05);  // cap so a stall doesn't teleport the bird
   lastFrame = now;
   update(dt);
   draw();
-  if (game.state === 'playing') updateHud(dt);
+  if (game.state === 'playing' || game.state === 'countdown') updateHud(dt);
   if (game.state === 'menu') $('bestMenu').textContent = game.best;
   requestAnimationFrame(frame);
 }

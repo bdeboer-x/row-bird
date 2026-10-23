@@ -9,6 +9,8 @@ The whole game is `index.html`: no server, no libraries, no data collection. It 
 Open the GitHub Pages URL in **Chrome on Android**, wake the PM5, tap **Connect PM5**, pick it from the list, and start.
 Holding the phone sideways gives you more warning before each obstacle.
 
+For the best view, open Chrome's ⋮ menu and choose **Add to Home screen** (or **Install app**). The installed app gets its own icon and runs full screen. In a normal browser tab, tap **⛶ Full screen** in the menu instead; tapping Start also switches to full screen.
+
 Every stroke is a flap. The bird hops as your drive starts, then gets its main lift when the drive ends, sized by that stroke's power.
 Set your **target power** in the menu: a stroke at target power at about 24 strokes a minute keeps the bird level, harder strokes climb, and lighter ones sink.
 

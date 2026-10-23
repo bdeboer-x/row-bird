@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#7ec8e3">
 <title>Row Bird</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
   :root {
     --ink: #1d2b36;
@@ -44,6 +47,10 @@
   .stat span { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; opacity: .9; }
   #pauseBtn { pointer-events: auto; font-size: 20px; width: 44px; height: 44px; border-radius: 50%;
               border: 0; background: rgba(255,255,255,.7); color: var(--ink); }
+
+  #fsBtn { position: absolute; z-index: 1; font: inherit; font-size: 15px; font-weight: 700;
+           top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 10px);
+           padding: 8px 14px; border-radius: 22px; border: 0; background: rgba(255,255,255,.8); color: var(--ink); }
 
   /* Power-up announcement */
   #banner { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 68px); z-index: 2;
@@ -171,6 +178,7 @@
 
 <!-- Main menu -->
 <div id="menu" class="overlay">
+  <button id="fsBtn" class="hidden">⛶ Full screen</button>
   <div class="card menu-card">
     <div class="menu-intro">
       <h1>Row Bird</h1>
@@ -1115,7 +1123,17 @@ $('simBtn').addEventListener('click', () => {
   setStatus(on ? 'Simulator: press and hold the screen for each stroke. Hold ~½ second for target power, longer for more.' : '');
   if (on) showStart(); else hideStart();
 });
-$('startBtn').addEventListener('click', startGame);
+// Full screen: the installed app opens full screen from the manifest; in a browser tab the
+// button (or tapping Start) asks for it. Needs a tap, so it can't happen on page load.
+const canFullscreen = () => document.fullscreenEnabled && !document.fullscreenElement &&
+  !matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+function enterFullscreen() { if (canFullscreen()) document.documentElement.requestFullscreen().catch(() => {}); }
+function refreshFsBtn() { $('fsBtn').classList.toggle('hidden', !canFullscreen()); }
+document.addEventListener('fullscreenchange', refreshFsBtn);
+$('fsBtn').addEventListener('click', enterFullscreen);
+refreshFsBtn();
+
+$('startBtn').addEventListener('click', () => { enterFullscreen(); startGame(); });
 $('againBtn').addEventListener('click', startGame);
 $('menuBtn').addEventListener('click', () => { game.state = 'menu'; showOnly('menu'); });
 $('pauseBtn').addEventListener('click', ev => { ev.stopPropagation(); pause(); });

@@ -10,6 +10,7 @@ A slow-paced, river-themed side-scrolling game controlled by a **Concept2 rower 
 
 - `index.html`: the entire game. HTML, CSS and JS in one file with no libraries, no build step and no server. Keep it that way: the owner wanted something small enough to read in full and nothing to abuse when it's hosted publicly.
 - `README.md`: player-facing instructions and hosting steps.
+- `manifest.webmanifest` + `icons/`: what Android uses for "Install app" / "Add to Home screen". `icons/icon.svg` is the source (sky, willow strands, river, and the bird drawn with the same shapes as `drawBird`). It's full-bleed so it works as a maskable icon, with the bird inside the central safe circle. Regenerate the PNGs with `rsvg-convert -w N -h N icons/icon.svg -o icons/icon-N.png` (192, 512, and 180 for `apple-touch-icon.png`). The manifest sets `display: fullscreen`, so the installed app has no browser bar or status bar.
 
 ## How `index.html` is organised
 
@@ -65,6 +66,7 @@ These follow Concept2's "PM5 Bluetooth Smart Interface Definition". Service UUID
   - Bad: anchor (gravity ×1.25 for 12s, needing ~30% more watts), storm (next 4 gates −0.07, min 0.22).
   - Pickups are announced with a **large banner across the top** (`showBanner`). The owner asked for this because small text near the bird went unnoticed. Active timed effects also show as chips under the score.
 - **Phone held sideways is the intended view.** Upright, you only see about 1.5s ahead. The menu switches to a two-column layout for short landscape screens (`@media (orientation: landscape) and (max-height: 520px)`) so it fits without scrolling.
+- **Full screen:** the installed app opens full screen from the manifest. In a browser tab, the menu's "⛶ Full screen" button, or tapping Start, calls `requestFullscreen` (it needs a tap, so it can't run on page load). The button hides when you're already full screen or running as the installed app.
 - The screen is kept awake with the Wake Lock API, and the game auto-pauses when the app goes to the background or the PM5 disconnects.
 
 ## Original look, no borrowed IP

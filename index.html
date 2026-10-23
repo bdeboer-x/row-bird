@@ -279,7 +279,11 @@ const MAX_FALL = 0.2;
 // it ends and we know how hard it was.
 const HOP_V = 0.04;
 const FLAP_V = 0.085;       // lift from a stroke at exactly target power
-const MIN_LIFT = 0.35, MAX_LIFT = 1.8;  // lift scales with watts, within these limits
+const MIN_LIFT = 0.05, MAX_LIFT = 1.8;  // lift scales with watts, within these limits
+// Easing off should be as usable as pulling harder. Below DOWN_KNEE × target, lift falls
+// DOWN_GAIN times faster, so a 0.8× stroke sinks about as much as a 1.6× stroke climbs.
+// The knee leaves normal stroke-to-stroke variation (±5%) behaving linearly.
+const DOWN_KNEE = 0.95, DOWN_GAIN = 2;
 const DRIVE_TIMEOUT = 2;    // lift anyway if the power reading never arrives
 const RHYTHM_SPM = 24;      // the rate FLAP_V is balanced for; the rhythm ring counts one stroke at this rate
 
@@ -708,7 +712,8 @@ function driveEnd(watts) {
   game.wattsTotal += watts;
 
   const ratio = watts / targetWatts;
-  game.bird.vy = -FLAP_V * clamp(ratio, MIN_LIFT, MAX_LIFT);
+  const lift = ratio - DOWN_GAIN * Math.max(0, DOWN_KNEE - ratio);
+  game.bird.vy = -FLAP_V * clamp(lift, MIN_LIFT, MAX_LIFT);
   addPopup(watts + 'W', birdX, game.bird.y - 0.06, powerColor(ratio));
   sound('stroke', ratio);
 }

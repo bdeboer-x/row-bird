@@ -46,6 +46,7 @@ These follow Concept2's "PM5 Bluetooth Smart Interface Definition". Service UUID
 
 - `requestDevice` filters on `namePrefix: 'PM5'`. Notifications are subscribed **one at a time**, because Android dislikes overlapping GATT calls.
 - If no power reading arrives within `DRIVE_TIMEOUT` (2s) of a drive start, the lift fires anyway using the last known watts.
+- **Reconnect:** `pm5Device` is kept after a disconnect. `onPM5Disconnected` pauses, then retries `gatt.connect()` 3 times (`reconnectPM5`, 10s timeout each, 2s apart) with no chooser. If that fails, the pause screen shows a Reconnect button, and the menu's button reads "Reconnect PM5". If a menu reconnect fails, `chooserNext` makes the next tap open the chooser. That can't be automatic, because by then Chrome's user-gesture window has expired. This only works within one page session. Remembering the PM5 across reloads (`navigator.bluetooth.getDevices`) wasn't attempted.
 - Web Bluetooth requires Chrome (Android/desktop) and **https**. iPhone Safari doesn't support it; Bluefy would be the workaround if that's ever needed.
 - **Not verified against real hardware by Claude.** The owner has played it on their PM5 and it works. The exact timing of `0036` relative to the end of the drive is still an assumption.
 
@@ -58,7 +59,8 @@ These follow Concept2's "PM5 Bluetooth Smart Interface Definition". Service UUID
 - **Modes:**
   - **Endless:** 3 lives, max 5.
   - **Timed:** 5/10/15/20 minutes. **You can't die**, because the owner uses it as a workout. A crash forfeits that gate's point (`gate.crashed`), followed by 3s of invulnerability. The end screen shows strokes, average watts and crashes.
-  - Best scores are stored per mode and length.
+  - **Difficulty** (Easy/Normal/Hard, the `DIFFICULTY` table) sets gap height and how far gaps wander. Endless narrows from `gap` toward `minGap` as you score. **Timed keeps `timedGap` fixed for the whole run.** It used to narrow like Endless, which made the back half of a long workout the hardest part, just as the owner tired. Steering-bot crashes per 10-minute Timed run: old ~30, Easy 1–3, Normal ~5–15, Hard ~28.
+  - Best scores are stored per mode, length and difficulty.
 - **Power-ups** (menu toggle, on by default) float halfway between gates, `ITEM_CHANCE = 0.18`. This was halved from 0.35 after the owner found 0.35 too many. 60% good / 40% bad.
   - Good: shield, heart (Endless) / +3 star (Timed, or at max lives), feather (gravity ×0.75 for 12s), wide gaps (next 4 gates +0.1).
   - Lives are capped at `MAX_LIVES` (5) twice: `pickItemType` spawns a star instead of a heart at max lives, and `collect` turns a heart into a star if you reached max lives after it was placed (items are placed about a gate ahead).
@@ -67,6 +69,11 @@ These follow Concept2's "PM5 Bluetooth Smart Interface Definition". Service UUID
   - Pickups are announced with a **large banner across the top** (`showBanner`). The owner asked for this because small text near the bird went unnoticed. Active timed effects also show as chips under the score.
 - **Phone held sideways is the intended view.** Upright, you only see about 1.5s ahead. The menu switches to a two-column layout for short landscape screens (`@media (orientation: landscape) and (max-height: 520px)`) so it fits without scrolling.
 - **Full screen:** the installed app opens full screen from the manifest. In a browser tab, the menu's "⛶ Full screen" button, or tapping Start, calls `requestFullscreen` (it needs a tap, so it can't run on page load). The button hides when you're already full screen or running as the installed app.
+- **Rhythm ring** (`drawRhythm`, under the power bar): it fills over one stroke at `RHYTHM_SPM` (24, the rate `FLAP_V` is balanced for) and pulses green when the next stroke is due. The HUD spm turns green within ±2 of 24.
+- **Time of day** (`DAY` stops, `dayPhase`, `sceneAt`): Timed runs go from morning to dusk over the run. Endless loops a full day, including night, every `DAY_MINUTES`. Only the background changes color (sky, sun/moon/stars, clouds, hills, water, and landmarks via `scene.tint`). Gates, items and the bird keep fixed colors so they stay readable. Landmarks on the hills (trees, windmill, cottage, church, tower) are picked by a hash of their slot, so they're stable while you scroll past.
+- **Crash feedback:** `crashBurst` throws particles (a splash for water, leaves for a willow, stone chips for a pillar, plus feathers), with a 0.4s screen shake and a red flash. Clearing a gate by less than `NEAR_MISS` shows "Close one!". `gate.margin` tracks the closest the bird came, and a negative margin (passed while invulnerable) doesn't count.
+- **Sound** is synthesized (`tone`, `noise`, the `SOUNDS` table; no audio files) and can be toggled from the menu (`settings.sound`). Events: countdown, stroke whoosh (louder for harder strokes), gate chime, near miss, good and bad pickups, shield, crash and finish.
+- **HUD numbers** at the bottom are sized `clamp(30px, 11vh, 52px)` so they can be read from the seat.
 - The screen is kept awake with the Wake Lock API, and the game auto-pauses when the app goes to the background or the PM5 disconnects.
 
 ## Original look, no borrowed IP
@@ -79,7 +86,7 @@ The owner asked about legal risk from the game's resemblance to Flappy Bird. Gam
 
 ## localStorage keys (prefix `rowbird.`)
 
-`target`, `runMode`, `durationIdx`, `powerups`, `best` (endless), `best.timed5|10|15|20`. The old keys `mode` and `pace` are leftovers from Glide mode and are unused.
+`target`, `runMode`, `durationIdx`, `powerups`, `difficulty`, `sound`, `best` (endless), `best.timed5|10|15|20`. Easy and Hard bests add `.easy` or `.hard` to the key, while Normal keeps the original keys so older bests still count. The old keys `mode` and `pace` are leftovers from Glide mode and are unused.
 
 ## Testing approach
 
@@ -91,10 +98,11 @@ firefox --headless --no-remote --profile <scratch>/ffprof --window-size=800,360 
 
 - Make a test copy that injects a `<script>` before `</body>`. It can drive the game synchronously (`startGame(); game.state='playing'; loop { driveStart/driveEnd; update(1/60) }`), then freeze it with `update=()=>{}`. Don't freeze it with `lastFrame=Infinity`: that produces a negative dt and NaN physics.
 - Stub `beep=()=>{}` and override `performance.now` when simulating time.
-- A "steering bot" (power ratio = `1 + (bird.y - nextGate.center) * 4`) is the standard check. It should survive several minutes without crashing.
+- A "steering bot" (power ratio = `1 + (bird.y - nextGate.center) * 4`) is the standard check. In Endless Normal it typically loses its 3 lives within 1–5 minutes. Compare crash counts between the old version (`git show HEAD:index.html`) and the new one over several runs, rather than expecting zero.
 - A level-flight check: steady target power at 24 spm should keep `bird.y` near 0.45.
 - Useful sizes: 800×360 (phone sideways with Chrome's address bar) and 412×860 (upright).
 - CSS transitions and animations are captured at t=0. Disable them in the test copy before judging a screenshot. A "switch looks off" false alarm came from this.
+- Firefox needs an absolute `file:///…` URL. With a relative one, it hangs until the timeout.
 - Emoji render grey or faint here (no color emoji font). They're fine on Android.
 
 ## Owner preferences

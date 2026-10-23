@@ -43,14 +43,18 @@
           font-weight: 700; box-shadow: inset 0 0 0 2px var(--green); }
   .chip.bad { background: rgba(255,228,222,.9); box-shadow: inset 0 0 0 2px #d9483b; }
   .stat { text-align: center; text-shadow: 0 2px 0 rgba(0,0,0,.25); }
-  .stat b { display: block; font-size: 28px; font-variant-numeric: tabular-nums; }
-  .stat span { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; opacity: .9; }
+  /* Big enough to read at a glance from the seat, a metre from the phone */
+  #hudBottom { padding-bottom: 4px; }
+  .stat b { display: block; font-size: clamp(30px, 11vh, 52px); line-height: 1.05; font-variant-numeric: tabular-nums;
+            -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; }
+  .stat span { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; opacity: .95; }
+  #spm.onbeat { color: #7dffa0; }
   #pauseBtn { pointer-events: auto; font-size: 20px; width: 44px; height: 44px; border-radius: 50%;
               border: 0; background: rgba(255,255,255,.7); color: var(--ink); }
 
-  #fsBtn { position: absolute; z-index: 1; font: inherit; font-size: 15px; font-weight: 700;
-           top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 10px);
-           padding: 8px 14px; border-radius: 22px; border: 0; background: rgba(255,255,255,.8); color: var(--ink); }
+  .mini-row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+  .mini-row button { font: inherit; font-size: 14px; font-weight: 600; padding: 6px 14px; border-radius: 18px;
+                     border: 2px solid #c4bea9; background: transparent; color: var(--ink); }
 
   /* Power-up announcement */
   #banner { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 68px); z-index: 2;
@@ -114,6 +118,8 @@
   .seg { flex: 1; font: inherit; font-size: 16px; font-weight: 600; padding: 10px 6px; border-radius: 12px;
          border: 2px solid #c4bea9; background: transparent; color: var(--ink); }
   .seg.on { border-color: var(--accent); background: #ffe6d3; }
+  .seg-row.small { margin-top: 8px; }
+  .seg-row.small .seg { font-size: 14px; padding: 6px 4px; }
   .duration { margin: 10px 0 0; text-align: left; }
   .duration-head { display: flex; justify-content: space-between; font-size: 15px; }
   .duration input { width: 100%; height: 28px; margin: 4px 0 0; accent-color: var(--accent); }
@@ -144,6 +150,9 @@
     .menu-card .sub { display: none; }
     .menu-card .seg-row { margin-top: 8px; }
     .menu-card .seg { padding: 7px 6px; }
+    .menu-card .seg-row.small { margin-top: 6px; }
+    .menu-card .seg-row.small .seg { padding: 4px; }
+    .menu-card label.toggle { margin-top: 8px; }
     .menu-card .hint.best { margin-top: 8px; }
     .source-buttons { display: flex; gap: 10px; }
     .source-buttons button.big { margin: 0; }
@@ -151,6 +160,7 @@
     .menu-controls label.setting { margin-top: 10px; }
     .menu-controls #status { margin-top: 6px; }
     .menu-controls #startBtn { margin-bottom: 0; }
+    .menu-card .mini-row { margin-top: 10px; }
   }
 </style>
 </head>
@@ -178,7 +188,6 @@
 
 <!-- Main menu -->
 <div id="menu" class="overlay">
-  <button id="fsBtn" class="hidden">⛶ Full screen</button>
   <div class="card menu-card">
     <div class="menu-intro">
       <h1>Row Bird</h1>
@@ -192,6 +201,11 @@
         <div class="duration-head"><span>Run length</span><b id="durationLabel"></b></div>
         <input id="durationInput" type="range" min="0" max="3" step="1">
         <div class="ticks"><span>5</span><span>10</span><span>15</span><span>20</span></div>
+      </div>
+      <div class="seg-row small">
+        <button class="seg" data-diff="easy">Easy</button>
+        <button class="seg" data-diff="normal">Normal</button>
+        <button class="seg" data-diff="hard">Hard</button>
       </div>
       <label class="toggle">
         <span>Power-ups<small>Random bonuses and hazards along the river</small></span>
@@ -213,6 +227,10 @@
       <p id="status"></p>
       <button id="startBtn" class="big go hidden">Start</button>
       <p class="hint" id="rotateHint">Tip: turn your phone sideways to see obstacles coming sooner.</p>
+      <div class="mini-row">
+        <button id="soundBtn"></button>
+        <button id="fsBtn" class="hidden">⛶ Full screen</button>
+      </div>
     </div>
   </div>
 </div>
@@ -222,6 +240,7 @@
   <div class="card">
     <h2>Paused</h2>
     <p id="pauseMsg" class="sub"></p>
+    <button id="reconnectBtn" class="big hidden">Reconnect PM5</button>
     <button id="resumeBtn" class="big go">Resume</button>
     <button id="quitBtn" class="big secondary">Quit to menu</button>
   </div>
@@ -262,6 +281,18 @@ const HOP_V = 0.04;
 const FLAP_V = 0.085;       // lift from a stroke at exactly target power
 const MIN_LIFT = 0.35, MAX_LIFT = 1.8;  // lift scales with watts, within these limits
 const DRIVE_TIMEOUT = 2;    // lift anyway if the power reading never arrives
+const RHYTHM_SPM = 24;      // the rate FLAP_V is balanced for; the rhythm ring counts one stroke at this rate
+
+// Difficulty. Endless starts at `gap` and narrows toward `minGap` as you score; Timed keeps
+// `timedGap` the whole run so a long workout doesn't turn hard just as you tire.
+// `wander` is how far one gap can move up or down from the last.
+const DIFFICULTY = {
+  easy:   { gap: 0.47, minGap: 0.36, timedGap: 0.44, wander: 0.3 },
+  normal: { gap: 0.42, minGap: 0.28, timedGap: 0.36, wander: 0.4 },
+  hard:   { gap: 0.37, minGap: 0.25, timedGap: 0.30, wander: 0.48 },
+};
+const NEAR_MISS = 0.015;    // clearing a gate by less than this earns a "Close one!"
+const DAY_MINUTES = 15;     // Endless loops a full day in this time; Timed goes morning to dusk
 
 // Power-ups and power-downs, floating between gates.
 const ITEM_R = 0.04;
@@ -318,10 +349,15 @@ const settings = {
   mode: store.get('runMode', 'endless'),  // 'endless' | 'timed'
   durationIdx: clamp(store.get('durationIdx', 1), 0, DURATIONS.length - 1),
   powerups: store.get('powerups', true),
+  difficulty: DIFFICULTY[store.get('difficulty')] ? store.get('difficulty') : 'normal',
+  sound: store.get('sound', true),
 };
 const runMinutes = () => DURATIONS[settings.durationIdx];
-const bestKey = () => settings.mode === 'endless' ? 'best' : `best.timed${runMinutes()}`;
-const bestLabel = () => settings.mode === 'endless' ? 'Best (endless)' : `Best (${runMinutes()} min)`;
+// Normal keeps the original keys so earlier bests still count.
+const bestKey = () => (settings.mode === 'endless' ? 'best' : `best.timed${runMinutes()}`) +
+  (settings.difficulty === 'normal' ? '' : '.' + settings.difficulty);
+const bestLabel = () => `Best (${settings.mode === 'endless' ? 'endless' : runMinutes() + ' min'}` +
+  (settings.difficulty === 'normal' ? ')' : `, ${settings.difficulty})`);
 
 /* ------------------------------------------------------------------
  * Rower data. Either a real PM5 over Bluetooth or the tap simulator
@@ -349,11 +385,23 @@ const PM5 = {
 };
 const u16 = (dv, o) => dv.getUint16(o, true);
 
-let pm5Device = null;
+let pm5Device = null;       // kept after a disconnect so we can reconnect without the chooser
+let reconnecting = false;
+let chooserNext = false;     // a direct reconnect failed; the next Connect tap opens the chooser
 let lastStrokeState = -1;
 let lastStrokeCount = -1;
 
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+const withTimeout = (promise, ms) =>
+  Promise.race([promise, sleep(ms).then(() => { throw new Error('timed out'); })]);
+
 async function connectPM5() {
+  if (pm5Device && !chooserNext) {
+    if (await reconnectPM5()) return;
+    chooserNext = true;
+    setStatus("Couldn't reach the PM5. Press a button on it to wake it, then tap Connect to choose it again.");
+    return;
+  }
   setConnectButton('connecting');
   setStatus('Choose your PM5 in the pop-up…');
   try {
@@ -361,31 +409,63 @@ async function connectPM5() {
       filters: [{ namePrefix: 'PM5' }],
       optionalServices: [PM5.rowingService],
     });
-    pm5Device.addEventListener('gattserverdisconnected', onPM5Disconnected);
+    pm5Device.ongattserverdisconnected = onPM5Disconnected;
     setStatus('Connecting…');
-    const server = await pm5Device.gatt.connect();
-    const service = await server.getPrimaryService(PM5.rowingService);
-
-    // Ask for faster updates so the drive is noticed quickly. Not fatal if refused.
-    try {
-      const rate = await service.getCharacteristic(PM5.sampleRate);
-      await rate.writeValue(Uint8Array.of(3));
-    } catch (e) { console.warn('Could not set sample rate', e); }
-
-    // Subscribe one at a time; Android dislikes overlapping GATT requests.
-    await subscribe(service, PM5.generalStatus, onGeneralStatus);
-    await subscribe(service, PM5.additionalStatus, onAdditionalStatus);
-    await subscribe(service, PM5.strokeData2, onStrokeData2);
-
-    rower.source = 'pm5';
-    setConnectButton('connected', pm5Device.name);
-    setStatus('');
-    showStart();
+    await setupPM5();
+    onPM5Connected();
   } catch (e) {
     console.error(e);
     setConnectButton('idle');
     if (e.name === 'NotFoundError') setStatus('No rower chosen. Wake the PM5 and try again.');
     else setStatus('Could not connect: ' + e.message);
+  }
+}
+
+async function setupPM5() {
+  const server = await withTimeout(pm5Device.gatt.connect(), 10000);
+  const service = await server.getPrimaryService(PM5.rowingService);
+
+  // Ask for faster updates so the drive is noticed quickly. Not fatal if refused.
+  try {
+    const rate = await service.getCharacteristic(PM5.sampleRate);
+    await rate.writeValue(Uint8Array.of(3));
+  } catch (e) { console.warn('Could not set sample rate', e); }
+
+  // Subscribe one at a time; Android dislikes overlapping GATT requests.
+  await subscribe(service, PM5.generalStatus, onGeneralStatus);
+  await subscribe(service, PM5.additionalStatus, onAdditionalStatus);
+  await subscribe(service, PM5.strokeData2, onStrokeData2);
+  lastStrokeState = -1;
+}
+
+function onPM5Connected() {
+  rower.source = 'pm5';
+  chooserNext = false;
+  setConnectButton('connected', pm5Device.name);
+  setStatus('');
+  showStart();
+  if (game.state === 'paused') $('pauseMsg').textContent = "Reconnected. Tap Resume when you're ready.";
+  refreshPauseMenu();
+}
+
+// Reconnect to the rower picked earlier this session, no chooser needed.
+async function reconnectPM5() {
+  if (reconnecting) return false;
+  reconnecting = true;
+  setConnectButton('connecting');
+  refreshPauseMenu();
+  try {
+    await setupPM5();
+    onPM5Connected();
+    return true;
+  } catch (e) {
+    console.warn('Reconnect failed', e);
+    try { pm5Device.gatt.disconnect(); } catch {}
+    setConnectButton('idle');
+    return false;
+  } finally {
+    reconnecting = false;
+    refreshPauseMenu();
   }
 }
 
@@ -413,13 +493,21 @@ function onStrokeData2(dv) {
   driveEnd(u16(dv, 3));
 }
 
-function onPM5Disconnected() {
+// Dropped mid-session: pause and try to get it back a few times before asking for help.
+async function onPM5Disconnected() {
+  if (rower.source !== 'pm5' || reconnecting) return;  // a failed reconnect attempt also lands here
   rower.source = null;
   rower.spm = rower.watts = rower.pace = 0;
-  setConnectButton('idle');
-  setStatus('Rower disconnected. Tap Connect PM5 to reconnect.');
   hideStart();
   pause('Rower disconnected.');
+  const say = text => { setStatus(text); if (game.state === 'paused') $('pauseMsg').textContent = text; };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    say(`Rower disconnected. Reconnecting (try ${attempt} of 3)…`);
+    if (await reconnectPM5()) return;
+    if (rower.source) return;  // switched to the simulator meanwhile
+    await sleep(2000);
+  }
+  say("Couldn't reconnect. Press a button on the PM5 to wake it, then tap Reconnect.");
 }
 
 /* --- Simulator: press and hold the screen (or space) as the drive ---
@@ -479,17 +567,25 @@ const game = {
   crashes: 0,
   scrollX: 0,
   time: 0,
+  runTime: 0,     // seconds actually played this run (drives the time of day)
+  duration: 0,    // timed mode: run length in seconds
+  diff: DIFFICULTY.normal,
+  lastDriveAt: -99,  // game.time of the last drive start, for the rhythm ring
+  particles: [],  // splash drops, feathers, leaves after a crash
+  shake: 0,       // seconds of screen shake left
+  flash: 0,       // red crash flash, fades from 1
 };
 
 function startGame() {
   Object.assign(game, {
     mode: settings.mode,
+    diff: DIFFICULTY[settings.difficulty],
     bird: { y: 0.45, vy: 0, flap: 0 },
-    gates: [], items: [], popups: [],
+    gates: [], items: [], popups: [], particles: [],
     score: 0, lives: START_LIVES, invuln: 0,
-    timeLeft: runMinutes() * 60,
+    timeLeft: runMinutes() * 60, duration: runMinutes() * 60, runTime: 0,
     shield: false, heavy: 0, light: 0, gapEffect: { delta: 0, gatesLeft: 0 },
-    strokes: 0, wattsTotal: 0, crashes: 0,
+    strokes: 0, wattsTotal: 0, crashes: 0, shake: 0, flash: 0, lastDriveAt: -99,
   });
   addGate(worldW + 0.4);
   $('timer').classList.toggle('hidden', game.mode !== 'timed');
@@ -515,20 +611,21 @@ function showCountdownNumber(n) {
   el.classList.remove('hidden', 'pop');
   void el.offsetWidth;  // restart the CSS animation
   el.classList.add('pop');
-  beep(n > 0 ? 520 : 880, n > 0 ? 0.15 : 0.5);
+  sound(n > 0 ? 'count' : 'go');
 }
 
 function addGate(x) {
-  const prev = game.gates.at(-1);
-  let gapSize = Math.max(0.28, 0.42 - game.score * 0.005);
+  const prev = game.gates.at(-1), d = game.diff;
+  let gapSize = game.mode === 'timed' ? d.timedGap : Math.max(d.minGap, d.gap - game.score * 0.005);
   if (game.gapEffect.gatesLeft > 0) {
     gapSize = clamp(gapSize + game.gapEffect.delta, 0.22, 0.5);
     game.gapEffect.gatesLeft--;
   }
   // Keep each gap within reach of the last one.
-  const center = prev ? clamp(prev.center + (Math.random() - 0.5) * 0.4, 0.27, 0.66)
+  const center = prev ? clamp(prev.center + (Math.random() - 0.5) * d.wander, 0.27, 0.66)
                       : 0.45;
-  game.gates.push({ x, center, gapSize, targetGap: gapSize, passed: false, crashed: false, seed: Math.random() });
+  game.gates.push({ x, center, gapSize, targetGap: gapSize, passed: false, crashed: false,
+                    margin: Infinity, seed: Math.random() });
   if (prev && settings.powerups && Math.random() < ITEM_CHANCE) addItem(prev, game.gates.at(-1));
 }
 
@@ -559,8 +656,7 @@ function collect(item) {
     case 'storm': changeGaps(-0.07); break;
   }
   showBanner(`${kind.icon} ${kind.label}`, kind.desc, kind.good);
-  if (kind.good) { beep(880, 0.1); setTimeout(() => beep(1320, 0.15), 90); }
-  else beep(180, 0.35);
+  sound(kind.good ? 'good' : 'bad');
   updateHud(Infinity);
 }
 
@@ -594,6 +690,7 @@ function changeGaps(delta) {
 function driveStart() {
   game.bird.flap = 0.5;
   if (game.state !== 'playing') return;
+  game.lastDriveAt = game.time;
   game.bird.vy = Math.min(game.bird.vy, -HOP_V);
   game.driveTimer = DRIVE_TIMEOUT;
 }
@@ -613,6 +710,7 @@ function driveEnd(watts) {
   const ratio = watts / targetWatts;
   game.bird.vy = -FLAP_V * clamp(ratio, MIN_LIFT, MAX_LIFT);
   addPopup(watts + 'W', birdX, game.bird.y - 0.06, powerColor(ratio));
+  sound('stroke', ratio);
 }
 
 function powerColor(ratio) {
@@ -632,6 +730,18 @@ function update(dt) {
   game.bird.flap = Math.max(0, game.bird.flap - dt * 3);
   for (const p of game.popups) { p.age += dt; p.y -= dt * 0.08; }
   game.popups = game.popups.filter(p => p.age < 1.4);
+  for (const q of game.particles) {
+    q.age += dt;
+    q.vy += q.gravity * dt;
+    q.vx *= 1 - q.drag * dt;
+    q.vy *= 1 - q.drag * dt;
+    q.x += q.vx * dt;
+    q.y += q.vy * dt;
+    q.angle += q.spin * dt;
+  }
+  game.particles = game.particles.filter(q => q.age < q.life);
+  game.shake = Math.max(0, game.shake - dt);
+  game.flash = Math.max(0, game.flash - dt * 2.5);
 
   if (game.state === 'menu') {
     game.scrollX += SCROLL * 0.5 * dt;
@@ -653,9 +763,10 @@ function update(dt) {
     const before = Math.ceil(game.timeLeft);
     game.timeLeft -= dt;
     const after = Math.ceil(game.timeLeft);
-    if (after !== before && after <= 3 && after > 0) beep(520, 0.15);
-    if (game.timeLeft <= 0) { beep(880, 0.6); return endRun(); }
+    if (after !== before && after <= 3 && after > 0) sound('count');
+    if (game.timeLeft <= 0) { sound('finish'); return endRun(); }
   }
+  game.runTime += dt;
   game.heavy = Math.max(0, game.heavy - dt);
   game.light = Math.max(0, game.light - dt);
 
@@ -671,12 +782,23 @@ function update(dt) {
   b.y += b.vy * dt;
   if (b.y < BIRD_R) { b.y = BIRD_R; b.vy = Math.max(0, b.vy); }
 
+  const r = BIRD_R * 0.8;  // same forgiving hitbox as findCollision
   for (const p of game.gates) {
     p.x -= SCROLL * dt;
     p.gapSize += (p.targetGap - p.gapSize) * Math.min(1, dt * 3);
+    // Closest the bird came to either edge while inside the gate
+    if (Math.abs(p.x - birdX) < GATE_W / 2 + r) {
+      p.margin = Math.min(p.margin, b.y - r - (p.center - p.gapSize / 2), p.center + p.gapSize / 2 - b.y - r);
+    }
     if (!p.passed && p.x + GATE_W / 2 < birdX - BIRD_R) {
       p.passed = true;
-      if (!p.crashed) game.score++;
+      if (p.crashed) continue;
+      game.score++;
+      // A negative margin means you went through it while invulnerable; no praise for that.
+      if (p.margin >= 0 && p.margin < NEAR_MISS) {
+        addPopup('Close one!', birdX + 0.05, b.y - 0.1, '#ffe14d', 0.055);
+        sound('close');
+      } else sound('gate');
     }
   }
   game.gates = game.gates.filter(p => p.x > -GATE_W);
@@ -711,17 +833,46 @@ function crash(hit) {
     game.shield = false;
     game.invuln = 3;  // long enough to clear the gate (~1.55s to cross one)
     showBanner('🛡️ Shield saved you!', '', true);
-    beep(660, 0.2);
+    sound('shield');
     return;
   }
   if (hit !== 'water') hit.crashed = true;  // no point for a gate you crashed into
   game.crashes++;
   if (navigator.vibrate) navigator.vibrate(200);
-  beep(140, 0.3);
+  sound('crash', hit === 'water');
+  crashBurst(hit);
+  game.shake = 0.4;
+  game.flash = 1;
   game.invuln = 3;
   if (game.bird.y > GROUND - 0.1) { game.bird.y = GROUND - BIRD_R; game.bird.vy = 0; }
   // Timed runs never end early; a crash just costs you that gate.
   if (game.mode === 'endless' && --game.lives <= 0) endRun();
+}
+
+// Something to see when you crash: a splash, or feathers plus leaves or stone chips.
+function crashBurst(hit) {
+  const b = game.bird;
+  const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+  const add = (n, props) => {
+    for (let i = 0; i < n; i++) {
+      game.particles.push({
+        x: birdX + rand(-0.02, 0.02), y: b.y + rand(-0.02, 0.02), age: 0, angle: rand(0, 6), spin: rand(-6, 6),
+        ...Object.fromEntries(Object.entries(props).map(([k, v]) => [k, Array.isArray(v) ? rand(...v) : v])),
+      });
+    }
+  };
+  if (hit === 'water') {
+    add(18, { shape: 'drop', color: '#cdeefa', vx: [-0.2, 0.2], vy: [-0.45, -0.15], gravity: 1.1, drag: 0.5,
+              size: [0.006, 0.013], life: [0.6, 1] });
+  } else if (b.y < hit.center) {
+    add(10, { shape: 'leaf', color: '#5d9e45', vx: [-0.15, 0.1], vy: [-0.1, 0.1], gravity: 0.12, drag: 1.5,
+              size: [0.01, 0.016], life: [1.2, 1.8] });
+  } else {
+    add(8, { shape: 'drop', color: '#9a8c7a', vx: [-0.15, 0.1], vy: [-0.3, -0.1], gravity: 0.9, drag: 0.5,
+             size: [0.005, 0.009], life: [0.6, 0.9] });
+  }
+  add(8, { shape: 'feather', color: '#ffd23f', vx: [-0.18, 0.08], vy: [-0.2, 0.05], gravity: 0.1, drag: 1.8,
+           size: [0.012, 0.018], life: [1.2, 1.8] });
 }
 
 function endRun() {
@@ -744,24 +895,86 @@ function pause(message = '') {
   game.state = 'paused';
   $('countdown').classList.add('hidden');
   $('pauseMsg').textContent = message;
-  $('resumeBtn').disabled = !rower.source;
+  refreshPauseMenu();
   showOnly('pauseMenu');
 }
 
-/* --- Sound: short beeps ------------------------------------------- */
-let audio = null;
-function beep(freq, duration) {
-  try {
-    audio ??= new AudioContext();
-    const osc = audio.createOscillator(), gain = audio.createGain();
-    osc.type = 'square';
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.15, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + duration);
-    osc.connect(gain).connect(audio.destination);
-    osc.start();
-    osc.stop(audio.currentTime + duration);
-  } catch {}
+// Resume needs a data source; Reconnect shows when the PM5 dropped and isn't being retried.
+function refreshPauseMenu() {
+  $('resumeBtn').disabled = !rower.source;
+  $('reconnectBtn').classList.toggle('hidden', !!rower.source || !pm5Device);
+  $('reconnectBtn').disabled = reconnecting;
+  $('reconnectBtn').textContent = reconnecting ? 'Reconnecting…' : 'Reconnect PM5';
+}
+
+/* --- Sound: soft synthesized notes and noise, no audio files ------- */
+let audio = null, noiseBuf = null;
+function audioCtx() {
+  if (!settings.sound) return null;
+  audio ??= new AudioContext();
+  if (audio.state === 'suspended') audio.resume();
+  return audio;
+}
+
+// One note with a quick attack and a smooth fade. `slide` bends the pitch by that factor.
+function tone(freq, dur, { type = 'triangle', vol = 0.12, delay = 0, slide = 1 } = {}) {
+  const a = audioCtx();
+  if (!a) return;
+  const t = a.currentTime + delay;
+  const osc = a.createOscillator(), gain = a.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  if (slide !== 1) osc.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(gain).connect(a.destination);
+  osc.start(t);
+  osc.stop(t + dur + 0.05);
+}
+
+// Filtered white noise for whooshes and splashes. `sweep` moves the filter by that factor.
+function noise(dur, { freq = 800, q = 1, vol = 0.1, delay = 0, sweep = 1 } = {}) {
+  const a = audioCtx();
+  if (!a) return;
+  if (!noiseBuf) {
+    noiseBuf = a.createBuffer(1, a.sampleRate, a.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const t = a.currentTime + delay;
+  const src = a.createBufferSource(), filter = a.createBiquadFilter(), gain = a.createGain();
+  src.buffer = noiseBuf;
+  filter.type = 'bandpass';
+  filter.Q.value = q;
+  filter.frequency.setValueAtTime(freq, t);
+  if (sweep !== 1) filter.frequency.exponentialRampToValueAtTime(freq * sweep, t + dur);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(vol, t + dur * 0.25);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(filter).connect(gain).connect(a.destination);
+  src.start(t);
+  src.stop(t + dur + 0.05);
+}
+
+const SOUNDS = {
+  count: () => tone(523, 0.2),
+  go: () => [523, 659, 784].forEach((f, i) => tone(f, i === 2 ? 0.5 : 0.15, { delay: i * 0.08 })),
+  finish: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i === 3 ? 0.8 : 0.2, { delay: i * 0.12 })),
+  // A whoosh of air under the wings; louder for harder strokes.
+  stroke: ratio => noise(0.4, { freq: 350, sweep: 3, q: 0.7, vol: 0.04 + 0.04 * clamp(ratio, 0, 2) }),
+  gate: () => { tone(988, 0.3, { type: 'sine', vol: 0.07 }); tone(1319, 0.4, { type: 'sine', vol: 0.05, delay: 0.07 }); },
+  close: () => [1175, 1480, 1760].forEach((f, i) => tone(f, 0.3, { type: 'sine', vol: 0.07, delay: i * 0.06 })),
+  good: () => [659, 784, 988, 1319].forEach((f, i) => tone(f, 0.25, { delay: i * 0.07 })),
+  bad: () => { tone(392, 0.6, { slide: 0.6, vol: 0.13 }); tone(370, 0.6, { slide: 0.6, vol: 0.08, delay: 0.05 }); },
+  shield: () => { tone(660, 0.4, { type: 'sine', slide: 1.6 }); noise(0.3, { freq: 2500, vol: 0.05 }); },
+  crash: water => {
+    noise(water ? 0.7 : 0.4, { freq: water ? 1400 : 500, sweep: 0.3, q: 0.6, vol: 0.3 });
+    tone(130, 0.35, { type: 'sine', slide: 0.5, vol: 0.25 });
+  },
+};
+function sound(name, arg) {
+  try { SOUNDS[name](arg); } catch {}
 }
 
 /* ------------------------------------------------------------------
@@ -807,13 +1020,61 @@ function drawText(text, x, y, size, fill, { bold = true, outline = true } = {}) 
   ctx.restore();
 }
 
-function draw() {
-  const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
-  sky.addColorStop(0, '#5fb4dc');
-  sky.addColorStop(1, '#c9ecf5');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, worldW, 1);
+/* --- Time of day --------------------------------------------------
+ * Phase 0 → 1 is one day: morning, midday, afternoon, sunset, dusk,
+ * night, dawn. Background colors blend between these stops; gates,
+ * items and the bird keep their colors so they stay easy to see.
+ * ---------------------------------------------------------------- */
+const DAY = [
+  // phase, sky top, sky bottom, hills, water top, water bottom, darkness
+  [0.00, '#8bbbe0', '#ffe3c2', '#a3d6a0', '#4b9cc9', '#22648f', 0],
+  [0.22, '#5fb4dc', '#c9ecf5', '#8fd19e', '#2f8fc4', '#1d5f8a', 0],
+  [0.48, '#58a2d6', '#eef0cf', '#88c98c', '#2d88bb', '#1c5a84', 0],
+  [0.64, '#6a7dc4', '#ffb877', '#86ac70', '#3f7fb0', '#22507a', 0.15],
+  [0.75, '#3d4384', '#ec8a70', '#607f5f', '#335f8f', '#1b3a5e', 0.45],
+  [0.86, '#1c2550', '#34467c', '#3a5650', '#244470', '#11284a', 0.85],
+  [0.94, '#3c4c8e', '#e9a48e', '#6b9175', '#38709e', '#1b4870', 0.4],
+  [1.00, '#8bbbe0', '#ffe3c2', '#a3d6a0', '#4b9cc9', '#22648f', 0],
+].map(([t, ...c]) => ({ t, colors: c.slice(0, 5).map(hexRgb), dark: c[5] }));
+const NIGHT_RGB = [22, 28, 62];
 
+function hexRgb(hex) { return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)); }
+const mixRgb = (a, b, f) => a.map((v, i) => Math.round(v + (b[i] - v) * f));
+const rgb = c => `rgb(${c.join()})`;
+
+// Timed runs go from morning to dusk; Endless loops a full day every DAY_MINUTES.
+function dayPhase() {
+  if (game.state === 'menu') return 0.22;
+  if (game.mode === 'timed') return 0.02 + 0.73 * clamp(game.runTime / game.duration, 0, 1);
+  return (0.02 + game.runTime / (DAY_MINUTES * 60)) % 1;
+}
+
+let scene = null;  // this frame's colors
+function sceneAt(phase) {
+  let i = 0;
+  while (phase > DAY[i + 1].t) i++;
+  const a = DAY[i], b = DAY[i + 1], f = (phase - a.t) / (b.t - a.t);
+  const [skyTop, skyBottom, hills, waterTop, waterBottom] = a.colors.map((c, k) => rgb(mixRgb(c, b.colors[k], f)));
+  const dark = a.dark + (b.dark - a.dark) * f;
+  // Landmark colors fade toward night blue as it gets dark.
+  return { phase, skyTop, skyBottom, hills, waterTop, waterBottom, dark,
+           tint: hex => rgb(mixRgb(hexRgb(hex), NIGHT_RGB, dark * 0.7)) };
+}
+
+function draw() {
+  scene = sceneAt(dayPhase());
+  ctx.save();
+  if (game.shake > 0) {
+    const amp = 0.012 * game.shake / 0.4;
+    ctx.translate((Math.random() - 0.5) * amp, (Math.random() - 0.5) * amp);
+  }
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
+  sky.addColorStop(0, scene.skyTop);
+  sky.addColorStop(1, scene.skyBottom);
+  ctx.fillStyle = sky;
+  ctx.fillRect(-0.05, -0.05, worldW + 0.1, 1.1);
+
+  drawSkyLights();
   drawClouds();
   drawHills();
   for (const p of game.gates) drawGate(p);
@@ -821,12 +1082,48 @@ function draw() {
   drawReeds();
   drawWater();
   drawBird();
+  drawParticles();
   drawPopups();
-  if (game.state !== 'menu' && game.state !== 'over') drawPowerBar();
+  ctx.restore();
+
+  if (game.flash > 0) {
+    ctx.fillStyle = `rgba(255,70,50,${0.3 * game.flash})`;
+    ctx.fillRect(0, 0, worldW, 1);
+  }
+  if (game.state !== 'menu' && game.state !== 'over') { drawPowerBar(); drawRhythm(); }
+}
+
+// Fixed star positions, spread over the upper sky.
+const STARS = Array.from({ length: 50 }, () => [Math.random(), Math.random() * 0.55, Math.random()]);
+
+// The sun crosses the sky during the day; the moon and stars come out at night.
+function drawSkyLights() {
+  const { phase, dark } = scene;
+  if (dark > 0.05) {
+    for (const [sx, sy, tw] of STARS) {
+      ctx.fillStyle = `rgba(255,255,240,${dark * (0.5 + 0.5 * Math.sin(game.time * 2 + tw * 20))})`;
+      ctx.fillRect(sx * worldW, sy, 0.004, 0.004);
+    }
+  }
+  const arc = (u, r, color, glow) => {
+    const x = worldW * (0.08 + 0.84 * u), y = 0.78 - 0.62 * Math.sin(Math.PI * u);
+    const g = ctx.createRadialGradient(x, y, r * 0.8, x, y, r * 3);
+    g.addColorStop(0, glow); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r * 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  };
+  if (phase < 0.78) {
+    const u = phase / 0.78, low = 1 - Math.sin(Math.PI * u);  // 1 near the horizon
+    arc(u, 0.05 + 0.015 * low, rgb(mixRgb([255, 246, 196], [255, 150, 80], low)), `rgba(255,220,150,${0.35 + 0.25 * low})`);
+  } else {
+    arc((phase - 0.78) / 0.22, 0.04, '#f2f0e0', 'rgba(220,230,255,.25)');
+  }
 }
 
 function drawClouds() {
-  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.fillStyle = `rgba(255,255,255,${0.85 - 0.55 * scene.dark})`;
   const span = worldW + 0.6;
   for (let i = 0; i < 4; i++) {
     const x = ((i * 0.53 - game.scrollX * 0.15) % span + span) % span - 0.3;
@@ -837,17 +1134,104 @@ function drawClouds() {
   }
 }
 
+const HILL_PARALLAX = 0.3;
+const hillY = x => {
+  const wx = x + game.scrollX * HILL_PARALLAX;
+  return 0.74 + Math.sin(wx * 3.1) * 0.035 + Math.sin(wx * 7.3) * 0.015;
+};
+
 function drawHills() {
-  ctx.fillStyle = '#8fd19e';
+  drawLandmarks();
+  ctx.fillStyle = scene.hills;
   ctx.beginPath();
-  ctx.moveTo(0, GROUND);
-  for (let x = 0; x <= worldW + 0.02; x += 0.02) {
-    const wx = x + game.scrollX * 0.3;
-    ctx.lineTo(x, 0.74 + Math.sin(wx * 3.1) * 0.035 + Math.sin(wx * 7.3) * 0.015);
-  }
-  ctx.lineTo(worldW, GROUND);
+  ctx.moveTo(-0.05, GROUND);
+  for (let x = -0.05; x <= worldW + 0.07; x += 0.02) ctx.lineTo(x, hillY(x));
+  ctx.lineTo(worldW + 0.07, GROUND);
   ctx.fill();
 }
+
+/* --- Landmarks on the far bank, so a long run feels like a journey ---
+ * One slot every LANDMARK_GAP along the hills; a hash of the slot
+ * number picks what stands there, so it's the same every time you pass. */
+const LANDMARK_GAP = 0.9;
+const LANDMARKS = ['trees', 'windmill', 'trees', 'cottage', 'church', null, 'trees', 'cottage', 'tower', null];
+
+function drawLandmarks() {
+  const shift = game.scrollX * HILL_PARALLAX;
+  const first = Math.floor(shift / LANDMARK_GAP) - 1;
+  for (let n = first; n < first + worldW / LANDMARK_GAP + 3; n++) {
+    const h = (Math.imul(n, 2654435761) >>> 0) / 2 ** 32;
+    const kind = LANDMARKS[Math.floor(h * LANDMARKS.length)];
+    if (!kind) continue;
+    const x = n * LANDMARK_GAP + h * 0.3 - shift;
+    if (x < -0.2 || x > worldW + 0.2) continue;
+    // Planted a little into the hill so the base is hidden
+    LANDMARK_DRAW[kind](x, hillY(x) + 0.02, scene.tint, h);
+  }
+}
+
+const LANDMARK_DRAW = {
+  trees(x, y, tint, h) {
+    for (const [dx, s] of [[-0.03, 0.8], [0, 1.1], [0.035, 0.9]]) {
+      ctx.fillStyle = tint('#7a5a3a');
+      ctx.fillRect(x + dx - 0.003, y - 0.05 * s, 0.006, 0.05 * s);
+      ctx.fillStyle = tint(h > 0.5 ? '#4f8f4a' : '#5f9b4c');
+      ctx.beginPath(); ctx.arc(x + dx, y - 0.06 * s, 0.026 * s, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+  windmill(x, y, tint) {
+    ctx.fillStyle = tint('#e8dcc0');
+    ctx.beginPath();
+    ctx.moveTo(x - 0.025, y); ctx.lineTo(x - 0.014, y - 0.12); ctx.lineTo(x + 0.014, y - 0.12); ctx.lineTo(x + 0.025, y);
+    ctx.fill();
+    ctx.fillStyle = tint('#9a5b3f');
+    ctx.beginPath(); ctx.moveTo(x - 0.018, y - 0.12); ctx.lineTo(x, y - 0.145); ctx.lineTo(x + 0.018, y - 0.12); ctx.fill();
+    ctx.fillStyle = tint('#6b5a48');
+    ctx.fillRect(x - 0.006, y - 0.03, 0.012, 0.03);
+    ctx.save();
+    ctx.translate(x, y - 0.115);
+    ctx.rotate(game.time * 0.6);
+    ctx.strokeStyle = tint('#6b5a48');
+    ctx.lineWidth = 0.004;
+    for (let i = 0; i < 4; i++) {
+      ctx.rotate(Math.PI / 2);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -0.065); ctx.stroke();
+      ctx.fillStyle = tint('#f3ead6');
+      ctx.fillRect(0.002, -0.065, 0.012, 0.045);
+    }
+    ctx.restore();
+  },
+  cottage(x, y, tint) {
+    ctx.fillStyle = tint('#f3e6c8');
+    ctx.fillRect(x - 0.035, y - 0.045, 0.07, 0.045);
+    ctx.fillStyle = tint('#b5523b');
+    ctx.beginPath(); ctx.moveTo(x - 0.044, y - 0.045); ctx.lineTo(x, y - 0.08); ctx.lineTo(x + 0.044, y - 0.045); ctx.fill();
+    ctx.fillRect(x + 0.015, y - 0.085, 0.01, 0.025);  // chimney
+    // Windows light up after dark
+    ctx.fillStyle = scene.dark > 0.3 ? '#ffd877' : tint('#6d8fa8');
+    ctx.fillRect(x - 0.025, y - 0.033, 0.013, 0.013);
+    ctx.fillRect(x + 0.012, y - 0.033, 0.013, 0.013);
+    ctx.fillStyle = tint('#7a5a3a');
+    ctx.fillRect(x - 0.006, y - 0.025, 0.012, 0.025);
+  },
+  church(x, y, tint) {
+    ctx.fillStyle = tint('#d8d0c0');
+    ctx.fillRect(x - 0.04, y - 0.05, 0.055, 0.05);
+    ctx.fillRect(x + 0.015, y - 0.1, 0.025, 0.1);
+    ctx.fillStyle = tint('#7b8a9a');
+    ctx.beginPath(); ctx.moveTo(x + 0.012, y - 0.1); ctx.lineTo(x + 0.0275, y - 0.16); ctx.lineTo(x + 0.043, y - 0.1); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 0.045, y - 0.05); ctx.lineTo(x - 0.0125, y - 0.075); ctx.lineTo(x + 0.02, y - 0.05); ctx.fill();
+    ctx.fillStyle = scene.dark > 0.3 ? '#ffd877' : tint('#6d8fa8');
+    ctx.beginPath(); ctx.arc(x + 0.0275, y - 0.075, 0.006, 0, Math.PI * 2); ctx.fill();
+  },
+  tower(x, y, tint) {
+    ctx.fillStyle = tint('#b9ad9b');
+    ctx.fillRect(x - 0.022, y - 0.11, 0.044, 0.11);
+    for (let i = 0; i < 3; i++) ctx.fillRect(x - 0.026 + i * 0.019, y - 0.125, 0.014, 0.016);  // battlements
+    ctx.fillStyle = tint('#5b4e40');
+    ctx.fillRect(x - 0.005, y - 0.08, 0.01, 0.02);
+  },
+};
 
 // Each gate: willow branches hanging from above, a stone bridge pillar rising from the river.
 function drawGate(p) {
@@ -958,16 +1342,55 @@ function drawItem(it) {
 
 function drawWater() {
   const water = ctx.createLinearGradient(0, GROUND, 0, 1);
-  water.addColorStop(0, '#2f8fc4');
-  water.addColorStop(1, '#1d5f8a');
+  water.addColorStop(0, scene.waterTop);
+  water.addColorStop(1, scene.waterBottom);
   ctx.fillStyle = water;
   ctx.beginPath();
-  ctx.moveTo(0, 1);
-  for (let x = 0; x <= worldW + 0.02; x += 0.02) {
+  ctx.moveTo(-0.05, 1.05);
+  for (let x = -0.05; x <= worldW + 0.07; x += 0.02) {
     ctx.lineTo(x, GROUND + Math.sin((x + game.scrollX) * 25 + game.time * 2) * 0.005);
   }
-  ctx.lineTo(worldW, 1);
+  ctx.lineTo(worldW + 0.07, 1.05);
   ctx.fill();
+}
+
+function drawParticles() {
+  for (const q of game.particles) {
+    ctx.save();
+    ctx.globalAlpha = clamp((q.life - q.age) / 0.4, 0, 1);
+    ctx.translate(q.x, q.y);
+    ctx.rotate(q.angle);
+    ctx.fillStyle = q.color;
+    ctx.beginPath();
+    if (q.shape === 'drop') ctx.arc(0, 0, q.size, 0, Math.PI * 2);
+    else ctx.ellipse(0, 0, q.size, q.size * (q.shape === 'leaf' ? 0.45 : 0.3), 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (q.shape === 'feather') {
+      ctx.strokeStyle = '#c98a00';
+      ctx.lineWidth = 0.0015;
+      ctx.beginPath(); ctx.moveTo(-q.size, 0); ctx.lineTo(q.size, 0); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// Ring under the power bar: fills over one stroke at RHYTHM_SPM, then pulses
+// green when your next stroke is due. Rowing to it holds level flight at target power.
+function drawRhythm() {
+  const x = worldW - 0.039, y = 0.75, r = 0.03;
+  const frac = game.state === 'playing' ? (game.time - game.lastDriveAt) / (60 / RHYTHM_SPM) : 0;
+  ctx.fillStyle = 'rgba(0,0,0,.2)';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.lineCap = 'round';
+  if (frac >= 1) {
+    const pulse = 0.5 + 0.5 * Math.sin(game.time * 10);
+    ctx.fillStyle = `rgba(125,255,160,${0.55 + 0.45 * pulse})`;
+    ctx.beginPath(); ctx.arc(x, y, r * (0.85 + 0.15 * pulse), 0, Math.PI * 2); ctx.fill();
+  } else if (frac > 0) {
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 0.007;
+    ctx.beginPath(); ctx.arc(x, y, r - 0.006, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
+  }
 }
 
 function drawBird() {
@@ -1052,7 +1475,7 @@ function setConnectButton(state, deviceName = '') {
     btn.insertAdjacentHTML('beforeend', '<small></small>');
     btn.querySelector('small').textContent = deviceName;
   } else {
-    btn.textContent = state === 'connecting' ? 'Connecting…' : 'Connect PM5';
+    btn.textContent = state === 'connecting' ? 'Connecting…' : pm5Device && !chooserNext ? 'Reconnect PM5' : 'Connect PM5';
   }
 }
 function showStart() { $('startBtn').classList.remove('hidden'); }
@@ -1068,7 +1491,9 @@ function setHud(visible) {
 }
 
 function refreshMenu() {
-  document.querySelectorAll('.seg').forEach(b => b.classList.toggle('on', b.dataset.mode === settings.mode));
+  document.querySelectorAll('.seg[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === settings.mode));
+  document.querySelectorAll('.seg[data-diff]').forEach(b => b.classList.toggle('on', b.dataset.diff === settings.difficulty));
+  $('soundBtn').textContent = settings.sound ? '🔊 Sound' : '🔇 Sound off';
   $('durationBox').classList.toggle('hidden', settings.mode !== 'timed');
   $('durationInput').value = settings.durationIdx;
   $('durationLabel').textContent = `${runMinutes()} min`;
@@ -1087,6 +1512,7 @@ function updateHud(dt) {
   $('timer').textContent = formatClock(game.timeLeft);
   $('timer').classList.toggle('ending', game.timeLeft <= 30);
   $('spm').textContent = rower.spm || '–';
+  $('spm').classList.toggle('onbeat', Math.abs(rower.spm - RHYTHM_SPM) <= 2);
   $('pace').textContent = formatPace(rower.pace);
   $('watts').textContent = rower.watts || '–';
 
@@ -1137,14 +1563,31 @@ $('startBtn').addEventListener('click', () => { enterFullscreen(); startGame(); 
 $('againBtn').addEventListener('click', startGame);
 $('menuBtn').addEventListener('click', () => { game.state = 'menu'; showOnly('menu'); });
 $('pauseBtn').addEventListener('click', ev => { ev.stopPropagation(); pause(); });
+$('reconnectBtn').addEventListener('click', async () => {
+  $('pauseMsg').textContent = 'Reconnecting…';
+  if (!await reconnectPM5()) {
+    $('pauseMsg').textContent = "Still can't reach it. Press a button on the PM5 to wake it, then try again.";
+  }
+});
 $('resumeBtn').addEventListener('click', () => { showOnly(null); keepScreenOn(); startCountdown(); });
 $('quitBtn').addEventListener('click', () => { game.state = 'menu'; setHud(false); showOnly('menu'); });
 
-document.querySelectorAll('.seg').forEach(b => b.addEventListener('click', () => {
+document.querySelectorAll('.seg[data-mode]').forEach(b => b.addEventListener('click', () => {
   settings.mode = b.dataset.mode;
   store.set('runMode', settings.mode);
   refreshMenu();
 }));
+document.querySelectorAll('.seg[data-diff]').forEach(b => b.addEventListener('click', () => {
+  settings.difficulty = b.dataset.diff;
+  store.set('difficulty', settings.difficulty);
+  refreshMenu();
+}));
+$('soundBtn').addEventListener('click', () => {
+  settings.sound = !settings.sound;
+  store.set('sound', settings.sound);
+  refreshMenu();
+  sound('count');
+});
 $('durationInput').addEventListener('input', () => {
   settings.durationIdx = +$('durationInput').value;
   store.set('durationIdx', settings.durationIdx);

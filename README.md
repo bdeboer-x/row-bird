@@ -19,6 +19,12 @@ Set your **target power** in the menu: a stroke at target power at about 24 stro
 - **Endless:** three lives; see how far you get.
 - **Timed:** a 5, 10, 15 or 20 minute run. You can't die; a crash just costs you that gate's point. The end screen shows your strokes, average watts and crashes.
 
+Pick **Easy, Normal or Hard** for how wide the gaps are. In Timed runs the gaps stay the same width all the way through, so a long workout doesn't get harder just as you tire. Timed runs start in the morning and end at sunset.
+
+The ring under the power bar is a **rhythm guide**: it fills over one stroke at 24 strokes a minute and pulses green when your next stroke is due. Row to it at your target power to fly level. Your stroke rate turns green when you're within 2 of 24.
+
+If the rower disconnects mid-run, the game pauses and tries to reconnect by itself. If that doesn't work, wake the PM5 and tap **Reconnect**.
+
 ### Power-ups (toggle in the menu)
 
 Items float along the river between gates. Fly through them to collect.

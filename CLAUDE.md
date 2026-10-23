@@ -111,3 +111,14 @@ firefox --headless --no-remote --profile <scratch>/ffprof --window-size=800,360 
 - Plays on an Android phone in Chrome, mounted on the rower, mostly sideways.
 - Likes it slow-paced and doable, more workout than twitch game. The 5-minute timed run was described as "a good workout".
 - Wants to keep iterating: feel tweaks and new features. Push to Pages after changes so they can test right away.
+
+## Where things stand (2026-10-22)
+
+- The owner tested the big feature round (difficulty, reconnect, rhythm ring, time of day, sounds, crash effects, bigger HUD) on the rower and said it "seems to work good".
+- **Still tuning feel.** The owner found going up easy and going down hard on Normal. The steeper below-target response (`DOWN_KNEE`/`DOWN_GAIN`) was just pushed and hasn't been tried on the rower yet. The owner was told to set target power to about 150W, their natural level; the default is 120. Ask how descending feels now. Make it gentler or sharper with `DOWN_GAIN`.
+- **Offered, not yet built:**
+  - A "Calibrate" button: row 10 comfortable strokes, and target = their average.
+  - An on-screen tuning panel (sliders for gravity, lift and spacing) so feel can be adjusted on the rower without a push.
+  - Workout history: a per-run log and comparison with the last run.
+  - Distance, calories and heart rate from the PM5.
+  - Interval mode.
